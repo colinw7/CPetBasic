@@ -1,0 +1,37 @@
+VG$  Valid characters for UNIGET routine
+GC$  Character that has just been GOT
+F$   Legal monster types
+D$   Cursor down string for positioning messages
+D1$  Cursor down string for positioning status
+D2$  Cursor down string for positioning lake
+SP$  Space string for wiping away messages
+R$   Cursor right (not used directly)
+R1$  Cursor right string for positioning text
+R2$  Cursor right string for positioning lake
+C$   Dummy string variable
+J$   Character's name
+P$   Character's type
+X$   Scene flag to compare against F$
+M$   Monster type
+DL$  Delay routine flag: "D" is delay only, "W" is delay and wipe
+
+D(3)  Width of rooms in castle type scenes
+G(73) Path information G(0) holds game start position which is used in reincarnation
+N(8)  Gives depth of roons in castle-type scenarios
+P(8)  Contains the starting point in DATA for each of the floors in castle-type scenes.
+      Elements 0 and 1 are not used
+S(4)  Scenario addresses in the Valley
+T(2)  T(0) - Amulet, T(1) Stone count, T(2) Helm
+
+M$(18)  Monster names
+MS(18)  Monster strengths
+N1(18)  Monster psionics
+
+TN  Turns
+TM  Timing factor
+CF  Combat flag
+
+I, J, K  General variabls
+
+G  Monsters damage to you
+A  Val of GC$

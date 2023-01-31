@@ -1,0 +1,10 @@
+  99 REM ** DEFINE MAJOR VARIABLES
+ 100 DIM D(3), G(73), P(8), N(8), S(4), T(2)
+ 110 DIM M$(18),MS(18),N1(18)
+ 120 VG$="":GC$="":F$="":DL$=""
+ 130 TS=0:TN=0:TM=3:CF=0
+ 140 D$="[HOM][21 CD]"
+ 150 D1$=LEFT$(D$,17)
+ 160 SP$="[39 SPC]"
+ 170 R$="[30 CR]"
+ 180 R1$=LEFT$(R$,21)

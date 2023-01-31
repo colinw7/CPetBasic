@@ -1,0 +1,7 @@
+100 A$="Hello World"
+110 B$=LEFT$(A$,5)
+120 PRINT B$
+130 B$=MID$(A$,3,5)
+140 PRINT B$
+150 B$=RIGHT$(A$,5)
+160 PRINT B$

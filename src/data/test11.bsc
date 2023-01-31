@@ -1,0 +1,4 @@
+100 VG$="":GC$="":F$="":DL$=""
+110 PRINT VG$;GC$;F$;DL$
+120 TS=1:TN=2:TM=3:CF=4
+130 PRINT TS;TN;TM;CF
