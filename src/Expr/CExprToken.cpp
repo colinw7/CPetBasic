@@ -54,6 +54,7 @@ getFunction() const
   return static_cast<const CExprTokenFunction *>(this)->getFunction();
 }
 
+#ifdef PET_EXPR
 CExprVariablePtr
 CExprTokenBase::
 getVariableSubscript() const
@@ -62,6 +63,7 @@ getVariableSubscript() const
 
   return static_cast<const CExprTokenVariableSubscript *>(this)->getVariable();
 }
+#endif
 
 CExprValuePtr
 CExprTokenBase::
@@ -92,7 +94,9 @@ printQualified(std::ostream &os) const
     case CExprTokenType::REAL              : os << "<real>"; break;
     case CExprTokenType::STRING            : os << "<string>"; break;
     case CExprTokenType::FUNCTION          : os << "<function>"; break;
+#ifdef PET_EXPR
     case CExprTokenType::VARIABLE_SUBSCRIPT: os << "<variable_subscript>"; break;
+#endif
     case CExprTokenType::VALUE             : os << "<value>"; break;
     case CExprTokenType::BLOCK             : os << "<block>"; break;
     default                                : os << "<-?->"; break;
@@ -117,12 +121,14 @@ print(std::ostream &os) const
   function_->print(os, /*expanded*/false);
 }
 
+#ifdef PET_EXPR
 void
 CExprTokenVariableSubscript::
 print(std::ostream &os) const
 {
   variable_->print(os);
 }
+#endif
 
 //------
 

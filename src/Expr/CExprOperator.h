@@ -10,7 +10,10 @@ using CExprOperatorPtr = std::shared_ptr<CExprOperator>;
 class CExprOperator {
  public:
   static bool isOperatorChar(char c);
-  static int  isOperatorString(const std::string &str, uint i);
+
+#ifdef PET_EXPR
+  static int isOperatorString(const std::string &str, uint i);
+#endif
 
   CExprOperator(CExprOpType type, const std::string &name);
 

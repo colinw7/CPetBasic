@@ -173,8 +173,12 @@ parseLine(CExprTokenStack &stack, const std::string &line, uint &i)
     CStrUtil::skipSpace(line, &i);
     if (i >= line.size()) break;
 
+#ifdef PET_EXPR
     if      (CExprOperator::isOperatorChar(line[i]) ||
              CExprOperator::isOperatorString(line, i) > 0) {
+#else
+    if      (CExprOperator::isOperatorChar(line[i])) {
+#endif
       CExprOpType lastOpType =
        (lastPToken && lastPToken->type() == CExprTokenType::OPERATOR ?
         lastPToken->getOperator() : CExprOpType::UNKNOWN);
@@ -252,8 +256,12 @@ skipExpression(const std::string &line, uint &i, const std::string &echars)
     lastTokenType = CExprTokenType::UNKNOWN;
     lastOpType    = CExprOpType::UNKNOWN;
 
+#ifdef PET_EXPR
     if      (CExprOperator::isOperatorChar(line[i]) ||
              CExprOperator::isOperatorString(line, i) > 0) {
+#else
+    if      (CExprOperator::isOperatorChar(line[i])) {
+#endif
       if (line[i] == ',' || echars.find(line[i]) != std::string::npos)
         break;
 
@@ -725,11 +733,11 @@ skipOperator(const std::string &str, uint *i)
 
   if (opLen > 0) {
     if      (tolower(str[*i]) == 'a')
-      id = CExprOpType::LOGICAL_AND;
+      id = CExprOpType::BIT_AND;
     else if (tolower(str[*i]) == 'o')
-      id = CExprOpType::LOGICAL_OR;
+      id = CExprOpType::BIT_OR;
     else if (tolower(str[*i]) == 'n')
-      id = CExprOpType::LOGICAL_NOT;
+      id = CExprOpType::BIT_NOT;
     else
       assert(false);
 

@@ -123,11 +123,11 @@ isOperatorChar(char c)
   return (strchr(operator_chars, c) != 0);
 }
 
+#ifdef PET_EXPR
 int
 CExprOperator::
 isOperatorString(const std::string &str, uint i)
 {
-#ifdef PET_EXPR
   auto n = str.size();
 
   auto c1 = (i < n ? char(tolower(str[i++])) : '\0');
@@ -138,7 +138,7 @@ isOperatorString(const std::string &str, uint i)
   if (c1 == 'a' && c2 == 'n' && c3 == 'd' && ! isalpha(c4)) return 3;
   if (c1 == 'o' && c2 == 'r' && ! isalpha(c3)) return 2;
   if (c1 == 'n' && c2 == 'o' && c3 == 't' && ! isalpha(c4)) return 3;
-#endif
 
   return -1;
 }
+#endif

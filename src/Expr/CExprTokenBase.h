@@ -26,7 +26,9 @@ class CExprTokenBase {
   double                 getReal             () const;
   const std::string     &getString           () const;
   CExprFunctionPtr       getFunction         () const;
+#ifdef PET_EXPR
   CExprVariablePtr       getVariableSubscript() const;
+#endif
   CExprValuePtr          getValue            () const;
   const CExprTokenStack &getBlock            () const;
 

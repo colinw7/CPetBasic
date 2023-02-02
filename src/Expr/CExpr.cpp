@@ -423,7 +423,9 @@ variableSubscript(const std::string &, const CExprValueArray &) const
 {
   return CExprValuePtr();
 }
+#endif
 
+#ifdef PET_EXPR
 CExprValueType
 CExpr::
 nameType(const std::string &name)

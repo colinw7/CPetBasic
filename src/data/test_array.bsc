@@ -1,3 +1,5 @@
 100 PRINT A(1)
 110 A(1) = 4
 120 PRINT A(1)
+
+130 PRINT A(0)<>0

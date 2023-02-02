@@ -123,6 +123,7 @@ class CExprTokenFunction : public CExprTokenBase {
 
 //---
 
+#ifdef PET_EXPR
 class CExprTokenVariableSubscript : public CExprTokenBase {
  public:
   CExprTokenVariableSubscript(CExprVariablePtr variable) :
@@ -139,6 +140,7 @@ class CExprTokenVariableSubscript : public CExprTokenBase {
  private:
   CExprVariablePtr variable_;
 };
+#endif
 
 //---
 

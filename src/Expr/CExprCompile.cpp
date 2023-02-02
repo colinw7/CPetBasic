@@ -822,7 +822,11 @@ compilePostfixExpression(CExprITokenPtr itoken)
 
     auto itoken00 = itoken->getChild(0);
 
-    const std::string &identifier = itoken00->getIdentifier();
+    std::string identifier = itoken00->getIdentifier();
+
+#ifdef PET_EXPR
+    for (auto &c : identifier) c = char(toupper(c));
+#endif
 
     CExprFunctionMgr::Functions functions;
 
@@ -876,7 +880,7 @@ compilePostfixExpression(CExprITokenPtr itoken)
       if (! variable)
         variable = expr_->createVariable(identifier, CExprValuePtr());
 
-      std::cerr << "Var " << identifier << " # " << num_args << "\n";
+    //std::cerr << "Var " << identifier << " # " << num_args << "\n";
 
       stackVariableSubscript(variable);
 #else

@@ -24,7 +24,9 @@ class CExprExecuteImpl {
   void executeCommaOperator        ();
   void executeEqualsOperator       ();
   bool executeFunction             (const CExprFunctionPtr &function, CExprValuePtr &value);
+#ifdef PET_EXPR
   bool executeVariableSubscript    (const CExprVariablePtr &variable, CExprValuePtr &value);
+#endif
   bool executeBlock                (const CExprTokenStack &stack, CExprValuePtr &value);
 
   CExprValuePtr  etokenToValue(const CExprTokenBaseP &etoken);
@@ -583,6 +585,7 @@ executeFunction(const CExprFunctionPtr &function, CExprValuePtr &value)
   return true;
 }
 
+#ifdef PET_EXPR
 bool
 CExprExecuteImpl::
 executeVariableSubscript(const CExprVariablePtr &variable, CExprValuePtr &value)
@@ -611,6 +614,7 @@ executeVariableSubscript(const CExprVariablePtr &variable, CExprValuePtr &value)
 
   return true;
 }
+#endif
 
 bool
 CExprExecuteImpl::

@@ -53,6 +53,7 @@ class CPetBasic {
     RETURN,
     RUN,
     SAVE,
+    STEP,
     STOP,
     SYS,
     THEN,
@@ -116,7 +117,21 @@ class CPetBasic {
 
   std::string keywordName(KeywordType keywordType) const;
 
+  //---
+
+  void dimVariable(const std::string &name, const Inds &inds);
+
   CExprValuePtr getVariableValue(const std::string &name, const Inds &inds);
+
+  bool setVariableValue(const std::string &name, const Inds &inds, const CExprValuePtr &value);
+
+  bool setVariableValue(const std::string &name, const CExprValuePtr &value);
+
+  CExprVariablePtr getVariable(const std::string &name) const;
+
+  bool hasArrayVariable(const std::string &name) const;
+
+  void addArrayVariable(const std::string &name);
 
  private:
   bool replaceEmbedded(const std::string &str1, std::string &str2) const;
@@ -349,6 +364,11 @@ class CPetBasic {
       return tokens_[it_++];
     }
 
+    Token *currentToken() {
+      if (atEnd()) return nullptr;
+      return tokens_[it_];
+    }
+
     bool atEnd() const { return (it_ >= nt_); }
 
    private:
@@ -445,6 +465,8 @@ class CPetBasic {
 
   //---
 
+  bool closeStatement  (TokenList &tokenList);
+  bool contStatement   (TokenList &tokenList);
   bool dataStatement   (const std::string &str);
   bool dimStatement    (TokenList &tokenList);
   bool endStatement    (TokenList &tokenList);
@@ -469,19 +491,25 @@ class CPetBasic {
 
   //---
 
+  bool readVariable(TokenList &tokenList, const std::string &id,
+                    std::string &varName, Inds &inds) const;
+
+  void printInds(const Inds &inds) const;
+
+  //---
+
   void initRunState();
+
+  //---
+
+  void printString(const std::string &s) const;
 
   //---
 
   CExprValuePtr evalExpr(const Tokens &tokens) const;
   CExprValuePtr evalExpr(const std::string &str) const;
 
-  bool setVariableValue(const std::string &name, const Inds &inds, const CExprValuePtr &value);
-  bool setVariableValue(const std::string &name, const CExprValuePtr &value);
-
   int getLineInd(uint lineNum) const;
-
-  CExprVariablePtr getVariable(const std::string &name) const;
 
   //---
 
@@ -490,7 +518,7 @@ class CPetBasic {
   //---
 
   void warnMsg(const std::string &msg) const;
-  bool errorMsg(const std::string &msg);
+  bool errorMsg(const std::string &msg) const;
 
  private:
   using NameKeywordMap = std::map<std::string, KeywordType>;
@@ -502,12 +530,14 @@ class CPetBasic {
   struct ForData {
     std::string   varName_;
     CExprValuePtr toVal_;
+    CExprValuePtr stepVal_;
     uint          lineNum_ { 0 };
 
     ForData() { }
 
-    ForData(const std::string &varName, const CExprValuePtr &toVal, uint lineNum) :
-     varName_(varName), toVal_(toVal), lineNum_(lineNum) {
+    ForData(const std::string &varName, const CExprValuePtr &toVal,
+            const CExprValuePtr &stepVal, uint lineNum) :
+     varName_(varName), toVal_(toVal), stepVal_(stepVal), lineNum_(lineNum) {
     }
   };
 
@@ -546,7 +576,7 @@ class CPetBasic {
 
   bool stopped_ = false;
 
-  std::string errorMsg_;
+  mutable std::string errorMsg_;
 
   //--
 
@@ -625,6 +655,9 @@ class CPetBasic {
       }
 
       i1 += inds[n - 1];
+
+      if (i1 >= values_.size())
+        return false;
 
       values_[i1] = value;
 

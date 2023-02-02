@@ -112,8 +112,7 @@ class CExpr {
   CExprVariablePtr createIntegerVariable(const std::string &name, long l);
   CExprVariablePtr createStringVariable (const std::string &name, const std::string &str);
 
-  CExprVariablePtr createUserVariable(const std::string &name,
-                                      CExprVariableObj *obj);
+  CExprVariablePtr createUserVariable(const std::string &name, CExprVariableObj *obj);
 
   CExprFunctionPtr getFunction (const std::string &name);
   void             getFunctions(const std::string &name, Functions &functions);

@@ -57,6 +57,18 @@ main(int argc, char **argv)
 
 //---
 
+namespace {
+
+std::string toUpper(const std::string &str) {
+  auto ustr = str;
+  for (auto &c : ustr) c = char(toupper(c));
+  return ustr;
+}
+
+}
+
+//---
+
 class CPetBasicExpr : public CExpr {
  public:
   using Inds = std::vector<uint>;
@@ -80,7 +92,15 @@ class CPetBasicExpr : public CExpr {
 
     //---
 
-    return basic_->getVariableValue(name, inds1);
+    auto val = basic_->getVariableValue(name, inds1);
+
+    if (! val) {
+      auto *th = const_cast<CPetBasicExpr *>(this);
+
+      val = th->createIntegerValue(0);
+    }
+
+    return val;
   }
 
  private:
@@ -127,6 +147,42 @@ class CPetBasicAbsFunction : public CPetBasicFunction {
   }
 };
 
+class CPetBasicAscFunction : public CPetBasicFunction {
+ public:
+  CPetBasicAscFunction(CPetBasic *basic) : CPetBasicFunction(basic) { }
+
+  CExprValuePtr exec(const CExprValueArray &values) override {
+    auto nv = values.size();
+    if (nv != 1) return errorMsg("Wrong number of arguments");
+
+    std::string s;
+    if (! values[0]->getStringValue(s))
+      return errorMsg("Wrong argument type");
+
+    auto l = long(s[0]);
+
+    return expr_->createIntegerValue(l);
+  }
+};
+
+class CPetBasicAtnFunction : public CPetBasicFunction {
+ public:
+  CPetBasicAtnFunction(CPetBasic *basic) : CPetBasicFunction(basic) { }
+
+  CExprValuePtr exec(const CExprValueArray &values) override {
+    auto nv = values.size();
+    if (nv != 1) return errorMsg("Wrong number of arguments");
+
+    double r;
+    if (! values[0]->getRealValue(r))
+      return errorMsg("Wrong argument type");
+
+    auto r1 = std::atan(r);
+
+    return expr_->createRealValue(r1);
+  }
+};
+
 class CPetBasicCosFunction : public CPetBasicFunction {
  public:
   CPetBasicCosFunction(CPetBasic *basic) : CPetBasicFunction(basic) { }
@@ -142,6 +198,26 @@ class CPetBasicCosFunction : public CPetBasicFunction {
     auto r1 = std::cos(r);
 
     return expr_->createRealValue(r1);
+  }
+};
+
+class CPetBasicChrFunction : public CPetBasicFunction {
+ public:
+  CPetBasicChrFunction(CPetBasic *basic) : CPetBasicFunction(basic) { }
+
+  CExprValuePtr exec(const CExprValueArray &values) override {
+    auto nv = values.size();
+    if (nv != 1) return errorMsg("Wrong number of arguments");
+
+    long l;
+    if (! values[0]->getIntegerValue(l))
+      return errorMsg("Wrong argument type");
+
+    auto c = uchar(l & 0xff);
+
+    std::string s = " "; s[0] = c;
+
+    return expr_->createStringValue(s);
   }
 };
 
@@ -315,6 +391,74 @@ class CPetBasicSinFunction : public CPetBasicFunction {
   }
 };
 
+class CPetBasicTanFunction : public CPetBasicFunction {
+ public:
+  CPetBasicTanFunction(CPetBasic *basic) : CPetBasicFunction(basic) { }
+
+  CExprValuePtr exec(const CExprValueArray &values) override {
+    auto nv = values.size();
+    if (nv != 1) return errorMsg("Wrong number of arguments");
+
+    double r;
+    if (! values[0]->getRealValue(r))
+      return errorMsg("Wrong argument type");
+
+    auto r1 = std::tan(r);
+
+    return expr_->createRealValue(r1);
+  }
+};
+
+class CPetBasicValFunction : public CPetBasicFunction {
+ public:
+  CPetBasicValFunction(CPetBasic *basic) : CPetBasicFunction(basic) { }
+
+  CExprValuePtr exec(const CExprValueArray &values) override {
+    auto nv = values.size();
+    if (nv != 1) return errorMsg("Wrong number of arguments");
+
+    std::string s;
+    if (! values[0]->getStringValue(s))
+      return errorMsg("Wrong argument type");
+
+    CStrParse parse(s);
+
+    parse.skipSpace();
+
+    std::string numStr;
+
+    while (! parse.eof()) {
+      if (! parse.isDigit())
+        break;
+
+      numStr += parse.readChar();
+    }
+
+    if (! parse.eof() && parse.isChar('.')) {
+      numStr += parse.readChar();
+
+      while (! parse.eof()) {
+        if (! parse.isDigit())
+          break;
+
+        numStr += parse.readChar();
+      }
+    }
+
+    if (numStr != "") {
+      auto r = std::stod(numStr);
+      auto i = std::stol(numStr);
+
+      if (std::abs(r - double(i)) < 1E-6)
+        return expr_->createIntegerValue(i);
+      else
+        return expr_->createRealValue(r);
+    }
+    else
+      return expr_->createIntegerValue(0);
+  }
+};
+
 //---
 
 class CPetBasicTIVar : public CExprVariableObj {
@@ -342,14 +486,14 @@ CPetBasic()
 
   expr_ = std::make_unique<CPetBasicExpr>(this);
 
-  expr_->addFunction("ABS"   , "s"    , new CPetBasicAbsFunction   (this));
-//expr_->addFunction("ASC"   , "s"    , new CPetBasicAscFunction   (this));
-//expr_->addFunction("ATN"   , "s"    , new CPetBasicAtnFunction   (this));
-//expr_->addFunction("CHR$"  , "s"    , new CPetBasicChrFunction   (this));
+  expr_->addFunction("ABS"   , "r"    , new CPetBasicAbsFunction   (this));
+  expr_->addFunction("ASC"   , "s"    , new CPetBasicAscFunction   (this));
+  expr_->addFunction("ATN"   , "r"    , new CPetBasicAtnFunction   (this));
+  expr_->addFunction("CHR$"  , "i"    , new CPetBasicChrFunction   (this));
   expr_->addFunction("COS"   , "r"    , new CPetBasicCosFunction   (this));
 //expr_->addFunction("DS"    , "s"    , new CPetBasicDsFunction    (this));
 //expr_->addFunction("DS$"   , "s"    , new CPetBasicDssFunction   (this));
-//expr_->addFunction("EXP"   , "s"    , new CPetBasicExpFunction   (this));
+//expr_->addFunction("EXP"   , "r"    , new CPetBasicExpFunction   (this));
 //expr_->addFunction("ERE"   , "s"    , new CPetBasicEreFunction   (this));
   expr_->addFunction("INT"   , "r"    , new CPetBasicIntFunction   (this));
   expr_->addFunction("LEFT$" , "s,i"  , new CPetBasicLeftFunction  (this));
@@ -360,17 +504,17 @@ CPetBasic()
 //expr_->addFunction("POS"   , "s"    , new CPetBasicPosFunction   (this));
   expr_->addFunction("RIGHT$", "s,i"  , new CPetBasicRightFunction (this));
   expr_->addFunction("RND"   , "s"    , new CPetBasicRndFunction   (this));
-//expr_->addFunction("SGN"   , "s"    , new CPetBasicSgnFunction   (this));
+//expr_->addFunction("SGN"   , "r"    , new CPetBasicSgnFunction   (this));
   expr_->addFunction("SIN"   , "s"    , new CPetBasicSinFunction   (this));
 //expr_->addFunction("SPC"   , "s"    , new CPetBasicSpcFunction   (this));
-//expr_->addFunction("SQR"   , "s"    , new CPetBasicSqrFunction   (this));
+//expr_->addFunction("SQR"   , "r"    , new CPetBasicSqrFunction   (this));
 //expr_->addFunction("STATUS", "s"    , new CPetBasicStatusFunction(this));
 //expr_->addFunction("STRS"  , "s"    , new CPetBasicStrsFunction  (this));
 //expr_->addFunction("TAB"   , "s"    , new CPetBasicTabFunction   (this));
-//expr_->addFunction("TAN"   , "s"    , new CPetBasicTanFunction   (this));
+//expr_->addFunction("TAN"   , "r"    , new CPetBasicTanFunction   (this));
 //expr_->addFunction("TIME$" , "s"    , new CPetBasicTimeFunction  (this));
 //expr_->addFunction("USR"   , "s"    , new CPetBasicUsrFunction   (this));
-//expr_->addFunction("VAL"   , "s"    , new CPetBasicValFunction   (this));
+  expr_->addFunction("VAL"   , "s"    , new CPetBasicValFunction   (this));
 
   expr_->createUserVariable("TI", new CPetBasicTIVar(this));
 }
@@ -760,24 +904,27 @@ replaceEmbedded(const std::string &str1, std::string &str2) const
 {
   str2 = "";
 
-  auto parseNumeric = [&](const std::string &name, const std::string &value) {
+  auto parseNumeric = [&](const std::string &name, const std::string &value, long &n) {
     auto len = name.size();
 
     if      (str1 == name) {
-      str2 += value;
+      n = 1;
+
+      if (value != "")
+        str2 += value;
 
       return true;
     }
     else if (str1.size() > len && str1.substr(str1.size() - len, len) == name) {
       CStrParse parse(str1);
 
-      long l;
-
-      if (! parse.readInteger(&l) && l > 0)
+      if (! parse.readInteger(&n) && n > 0)
         return false;
 
-      for (long i = 0; i < l; ++i)
-        str2 += value;
+      if (value != "") {
+        for (long i = 0; i < n; ++i)
+          str2 += value;
+      }
 
       return true;
     }
@@ -785,37 +932,47 @@ replaceEmbedded(const std::string &str1, std::string &str2) const
       return false;
   };
 
-  if      (str1 == "CLS") {
+  long n;
+
+  if      (str1 == "CLS") { // 47
+    str2 += "[2]";
     return true;
   }
-  else if (str1 == "REV") {
+  else if (str1 == "REV") { // 18
+    str2 += "[7m";
     return true;
   }
-  else if (str1 == "OFF") {
+  else if (str1 == "OFF") { // 146
+    str2 += "[0m";
     return true;
   }
-  else if (str1 == "HOM") {
+  else if (str1 == "HOM") { // 19
+    str2 += "[0,0H";
     return true;
   }
-  else if (parseNumeric("CU", "")) {
+  else if (parseNumeric("CU", "", n)) {  // 145
+    str2 += "[" + std::to_string(n) + "A";
     return true;
   }
-  else if (parseNumeric("CD", "")) {
+  else if (parseNumeric("CD", "", n)) { // 17
+    str2 += "[" + std::to_string(n) + "B";
     return true;
   }
-  else if (parseNumeric("CL", "")) {
+  else if (parseNumeric("CL", "", n)) { // 157
+    str2 += "[" + std::to_string(n) + "D";
     return true;
   }
-  else if (parseNumeric("CR", "")) {
+  else if (parseNumeric("CR", "", n)) { // 29
+    str2 += "[" + std::to_string(n) + "C";
     return true;
   }
-  else if (parseNumeric("SPC", " ")) {
+  else if (parseNumeric("SPC", " ", n)) { // 32
     return true;
   }
-  else if (parseNumeric("^SPC", " ")) {
+  else if (parseNumeric("^SPC", " ", n)) { // 160
     return true;
   }
-  else if (parseNumeric("^V", "X")) {
+  else if (parseNumeric("^V", "\u2715", n)) { // 214
     return true;
   }
 
@@ -826,12 +983,6 @@ CPetBasic::KeywordType
 CPetBasic::
 lookupKeyword(const std::string &str) const
 {
-  auto toUpper = [](const std::string &s) {
-    auto ustr = s;
-    for (auto &c : ustr) c = char(toupper(c));
-    return ustr;
-  };
-
   auto ustr = toUpper(str);
 
   initKeywords();
@@ -909,6 +1060,7 @@ initKeywords() const
     addKeyword(KeywordType::RETURN   , "RETURN"   );
     addKeyword(KeywordType::RUN      , "RUN"      );
     addKeyword(KeywordType::SAVE     , "SAVE"     );
+    addKeyword(KeywordType::STEP     , "STEP"     );
     addKeyword(KeywordType::STOP     , "STOP"     );
     addKeyword(KeywordType::SYS      , "SYS"      );
     addKeyword(KeywordType::THEN     , "THEN"     );
@@ -1043,8 +1195,12 @@ loop()
         if (lineData.lineN > 0)
           lines_[lineData.lineN] = lineData;
         else {
-          if (! runLine(lineData))
-            warnMsg("Invalid Line: " + lineBuffer);
+          if (! runLine(lineData)) {
+            if (errorMsg_ != "")
+              warnMsg("Invalid Line: " + lineBuffer + " (" + errorMsg_ + ")");
+            else
+              warnMsg("Invalid Line: " + lineBuffer);
+          }
         }
       }
       else
@@ -1066,6 +1222,8 @@ bool
 CPetBasic::
 runLine(const LineData &lineData)
 {
+  errorMsg_= "";
+
   if (isDebug())
     printLine(lineData);
 
@@ -1106,6 +1264,12 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
     bool rc = false;
 
     switch (keyword->keywordType()) {
+      case KeywordType::CLOSE:
+        rc = closeStatement(tokenList);
+        break;
+      case KeywordType::CONT:
+        rc = contStatement(tokenList);
+        break;
       case KeywordType::DATA:
         rc = dataStatement(token->str());
         break;
@@ -1212,7 +1376,7 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
       };
 
       while (token2 && ! isSeparator(token2, SeparatorType::CLOSE_RBRACKET)) {
-        if (isSeparator(token, SeparatorType::COMMA)) {
+        if (isSeparator(token2, SeparatorType::COMMA)) {
           if (! addInd()) return false;
 
           indexTokens.clear();
@@ -1255,7 +1419,7 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
       }
     }
     else {
-      return errorMsg("Invalid token");
+      return errorMsg("Invalid token '" + token1->str() + "'");
     }
   }
   else
@@ -1400,6 +1564,20 @@ addData(const std::string &dataStr) const
 
 bool
 CPetBasic::
+closeStatement(TokenList &)
+{
+  return false;
+}
+
+bool
+CPetBasic::
+contStatement(TokenList &)
+{
+  return false;
+}
+
+bool
+CPetBasic::
 dataStatement(const std::string &)
 {
   return true;
@@ -1407,9 +1585,36 @@ dataStatement(const std::string &)
 
 bool
 CPetBasic::
-dimStatement(TokenList &)
+dimStatement(TokenList &tokenList)
 {
-  // TODO
+  auto *token = tokenList.currentToken();
+
+  while (token) {
+    std::string varName;
+    Inds        inds;
+
+    if (! readVariable(tokenList, "DIM", varName, inds))
+      return false;
+
+#if 0
+    printVarDetails("DIM", varName, inds);
+#endif
+
+    //---
+
+    dimVariable(varName, inds);
+
+    //---
+
+    token = tokenList.currentToken();
+
+    if (token && ! isSeparator(token, SeparatorType::COMMA))
+      return errorMsg("Missing comma for DIM");
+
+    if (token)
+      token = tokenList.nextToken();
+  }
+
   return true;
 }
 
@@ -1527,33 +1732,62 @@ forStatement(uint lineNum, TokenList &tokenList)
     return errorMsg("No FOR TO token");
 
   if (fromTokens.empty())
-    return errorMsg("No FOR from tokens");
+    return errorMsg("No tokens for FOR ... TO");
 
   Tokens toTokens;
 
   token = tokenList.nextToken();
 
+  bool stepFound = false;
+
   while (token) {
+    if (isKeyword(token, KeywordType::STEP)) {
+      stepFound = true;
+      break;
+    }
+
     toTokens.push_back(token);
 
     token = tokenList.nextToken();
   }
 
   if (toTokens.empty())
-    return errorMsg("No FOR to tokens");
+    return errorMsg("No tokens for FOR ... TO ...");
+
+  Tokens stepTokens;
+
+  if (stepFound) {
+    token = tokenList.nextToken();
+
+    while (token) {
+      stepTokens.push_back(token);
+
+      token = tokenList.nextToken();
+    }
+
+    if (stepTokens.empty())
+      return errorMsg("No tokens for FOR ... TO ... STEP ...");
+  }
 
   auto var = getVariable(varToken->str());
 
   auto fromVal = evalExpr(fromTokens);
   auto toVal   = evalExpr(toTokens);
+  auto stepVal = (stepFound ? evalExpr(stepTokens) : CExprValuePtr());
 
   long toI;
   if (! toVal->getIntegerValue(toI))
-    return errorMsg("No FOR to value");
+    return errorMsg("No FOR ... TO value");
+
+  if (stepFound) {
+    long stepI;
+    if (! stepVal->getIntegerValue(stepI))
+      return errorMsg("Invalid FOR ... TO ... STEP value");
+  }
 
   var->setValue(fromVal);
 
-  forDatas_[varToken->str()] = ForData(varToken->str(), toVal, lineNum);
+  forDatas_[varToken->str()] = ForData(varToken->str(), toVal, stepVal, lineNum);
 
   return true;
 }
@@ -1571,13 +1805,13 @@ getStatement(TokenList &tokenList)
   if      (token->type() == TokenType::VARIABLE)
     varName = token->toString();
   else if (token->type() != TokenType::SEPARATOR)
-    return errorMsg("Invalid token");
+    return errorMsg("Invalid GET token '" + token->str() + "'");
 
   CReadLine readline;
 
   readline.setPrompt("? ");
 
-  auto line = readline.readLine();
+  auto line = toUpper(readline.readLine());
 
   auto val = expr_->createStringValue(line);
 
@@ -1653,7 +1887,7 @@ inputStatement(TokenList &tokenList)
     if      (token->type() == TokenType::VARIABLE)
       varNames.push_back(token->toString());
     else if (token->type() != TokenType::SEPARATOR)
-      return errorMsg("Invalid token");
+      return errorMsg("Invalid INPUT token '" + token->str() + "'");
 
     token = tokenList.nextToken();
   }
@@ -1764,7 +1998,16 @@ nextStatement(TokenList &tokenList)
     if (! val->getIntegerValue(fromI))
       return errorMsg("Invalid loop variable");
 
-    ++fromI;
+    long stepI = 1;
+    if (forData.stepVal_) {
+      if (! forData.stepVal_->getIntegerValue(stepI))
+        return errorMsg("Invalid FOR STEP value");
+    }
+
+    if (stepI == 0)
+      return errorMsg("Invalid FOR STEP value");
+
+    fromI += stepI;
 
     val->setIntegerValue(fromI);
 
@@ -1772,9 +2015,9 @@ nextStatement(TokenList &tokenList)
 
     long toI;
     if (! forData.toVal_->getIntegerValue(toI))
-      return errorMsg("No FOR to value");
+      return errorMsg("Invalid FOR TO value");
 
-    if (toI != fromI) { // not at end
+    if ((stepI > 0 && fromI < toI) || (stepI < 0 && fromI > toI)) { // not at end
       auto lineInd = getLineInd(forData.lineNum_);
       if (lineInd < 0) return errorMsg("Invalid GOTO line");
 
@@ -1835,7 +2078,7 @@ onStatement(TokenList &tokenList)
       lines.push_back(l);
     }
     else if (token->type() != TokenType::SEPARATOR)
-      return errorMsg("Invalid token");
+      return errorMsg("Invalid ON token '" + token->str() + "'");
 
     token = tokenList.nextToken();
   }
@@ -1899,17 +2142,34 @@ bool
 CPetBasic::
 printStatement(TokenList &tokenList)
 {
+  // , next tab stop (10), ; next pos
   int numOut = 0;
 
+  enum class Spacer {
+    NONE,
+    COMMA,
+    SEMI_COLON
+  };
+
+  Spacer nextSpacer { Spacer::NONE };
+
   while (true) {
+    auto spacer = nextSpacer;
+
     Tokens tokens1;
 
     auto *token = tokenList.nextToken();
     if (! token) break;
 
     while (token) {
-      if (isSeparator(token, SeparatorType::SEMI_COLON))
+      if      (isSeparator(token, SeparatorType::COMMA)) {
+        nextSpacer = Spacer::COMMA;
         break;
+      }
+      else if (isSeparator(token, SeparatorType::SEMI_COLON)) {
+        nextSpacer = Spacer::SEMI_COLON;
+        break;
+      }
 
       tokens1.push_back(token);
 
@@ -1921,15 +2181,17 @@ printStatement(TokenList &tokenList)
     std::string s;
     (void) value->getStringValue(s);
 
-    if (numOut)
-      std::cout << " ";
+    if      (spacer == Spacer::COMMA)
+      printString("\t");
+    else if (spacer == Spacer::SEMI_COLON)
+      printString(" ");
 
-    std::cout << s;
+    printString(s);
 
     ++numOut;
   }
 
-  std::cout << "\n";
+  printString("\n");
 
   return true;
 }
@@ -1938,21 +2200,45 @@ bool
 CPetBasic::
 readStatement(TokenList &tokenList)
 {
-  auto *token = tokenList.nextToken();
+  auto *token = tokenList.currentToken();
 
   while (token) {
-    if (token->type() != TokenType::VARIABLE)
-      return errorMsg("Invalid token");
+    std::string varName;
+    Inds        inds;
 
+    if (! readVariable(tokenList, "READ", varName, inds))
+      return false;
+
+#if 0
+    printVarDetails("DIM", varName, inds);
+#endif
+
+    //---
+
+    // store next data in variable
     if (dataValuePos_ >= dataValues_.size())
-      return errorMsg("No data");
+      return errorMsg("No data for READ");
 
     auto val = dataValues_[dataValuePos_++];
 
-    if (! setVariableValue(token->str(), val))
-      return false;
+    if (! inds.empty()) {
+      if (! setVariableValue(varName, inds, val))
+        return false;
+    }
+    else {
+      if (! setVariableValue(varName, val))
+        return false;
+    }
 
-    token = tokenList.nextToken();
+    //---
+
+    token = tokenList.currentToken();
+
+    if (token && ! isSeparator(token, SeparatorType::COMMA))
+      return errorMsg("Missing READ comma");
+
+    if (token)
+      token = tokenList.nextToken();
   }
 
   return true;
@@ -2006,6 +2292,116 @@ stopStatement(TokenList &)
 
 //---
 
+// read variable name and optional indices from token list
+// expect current token to be variable. Moves to token after close bracket
+bool
+CPetBasic::
+readVariable(TokenList &tokenList, const std::string &id,
+             std::string &varName, Inds &inds) const
+{
+  auto *token = tokenList.currentToken();
+
+  if (token->type() != TokenType::VARIABLE)
+    return errorMsg("Missing Variable token for " + id + " '" + token->str() + "'");
+
+  token = tokenList.nextToken();
+
+  varName = token->str();
+
+  //---
+
+  // just variable
+  token = tokenList.currentToken();
+
+  if (! token || ! isSeparator(token, SeparatorType::OPEN_RBRACKET))
+    return true;
+
+  token = tokenList.nextToken();
+
+  //---
+
+  // parse indices
+  Tokens indexTokens;
+
+  auto addInd = [&]() {
+    if (indexTokens.empty())
+      return errorMsg("Invalid variable index for " + id);
+
+    auto val1 = evalExpr(indexTokens);
+
+    long i;
+    if (! val1->getIntegerValue(i) || i < 0)
+      return errorMsg("Invalid variable index value for " + id);
+
+    inds.push_back(uint(i));
+
+    return true;
+  };
+
+  token = tokenList.currentToken();
+
+  while (token && ! isSeparator(token, SeparatorType::CLOSE_RBRACKET)) {
+    if (isSeparator(token, SeparatorType::COMMA)) {
+      if (! addInd()) return false;
+
+      indexTokens.clear();
+    }
+    else {
+      indexTokens.push_back(token);
+    }
+
+    token = tokenList.nextToken();
+    token = tokenList.currentToken();
+  }
+
+  if (! isSeparator(token, SeparatorType::CLOSE_RBRACKET))
+    return errorMsg("Invalid variable index for " + id);
+
+  token = tokenList.nextToken();
+
+  if (! addInd())
+    return false;
+
+  return true;
+}
+
+
+#if 0
+void
+CPetBasic::
+printVarDetails(const std::string &cmd, const std::string &varName, const Inds &inds) const
+{
+  std::cerr << cmd << " " << varName;
+
+  if (! inds.empty()) {
+    std::cerr << "(";
+
+    printInds(inds);
+
+    std::cerr << ")";
+  }
+
+  std::cerr << "\n";
+}
+#endif
+
+void
+CPetBasic::
+printInds(const Inds &inds) const
+{
+  bool output = false;
+
+  for (const auto &ind : inds) {
+    if (output) std::cerr << ",";
+
+    std::cerr << ind;
+
+    output = true;
+  }
+}
+
+//---
+
 void
 CPetBasic::
 initRunState()
@@ -2018,6 +2414,17 @@ initRunState()
   errorMsg_ = "";
 
   lineInd_ = -1;
+}
+
+//---
+
+void
+CPetBasic::
+printString(const std::string &s) const
+{
+  for (const auto &c : s) {
+    std::cout << c;
+  }
 }
 
 //---
@@ -2077,25 +2484,42 @@ evalExpr(const std::string &str) const
 
 //---
 
+void
+CPetBasic::
+dimVariable(const std::string &name, const Inds &inds)
+{
+  auto uname = toUpper(name);
+
+  //std::cerr << "dimVariable: " << uname << " "; printInds(inds); std::cerr << "\n";
+
+  auto *th = const_cast<CPetBasic *>(this);
+
+  if (! hasArrayVariable(uname))
+    th->addArrayVariable(uname);
+
+  auto pv = th->arrayVariables_.find(uname);
+  assert(pv != th->arrayVariables_.end());
+
+  return (*pv).second.resize(inds);
+}
+
 CExprValuePtr
 CPetBasic::
 getVariableValue(const std::string &name, const Inds &inds)
 {
-  std::cerr << "getVariableValue: " << name << " " << inds.size() << "\n";
+  auto uname = toUpper(name);
+
+  //std::cerr << "getVariableValue: " << uname << " "; printInds(inds); std::cerr << "\n";
 
   auto *th = const_cast<CPetBasic *>(this);
 
-  auto pv = th->arrayVariables_.find(name);
+  if (! hasArrayVariable(uname))
+    th->addArrayVariable(uname);
 
-  if (pv == th->arrayVariables_.end()) {
-    ArrayData arrayData;
+  auto pv = th->arrayVariables_.find(uname);
+  assert(pv != th->arrayVariables_.end());
 
-    arrayData.resize(10);
-
-    pv = th->arrayVariables_.insert(pv, ArrayVariables::value_type(name, arrayData));
-  }
-
-  std::cerr << name << " " << inds.size() << "\n";
+//std::cerr << uname << " " << inds.size() << "\n";
 
   return (*pv).second.value(inds);
 }
@@ -2104,7 +2528,9 @@ bool
 CPetBasic::
 setVariableValue(const std::string &name, const CExprValuePtr &value)
 {
-  auto valueType = expr_->nameType(name);
+  auto uname = toUpper(name);
+
+  auto valueType = expr_->nameType(uname);
 
   auto val = value;
 
@@ -2125,10 +2551,10 @@ setVariableValue(const std::string &name, const CExprValuePtr &value)
     }
   }
 
-  auto var = getVariable(name);
+  auto var = getVariable(uname);
 
   if (! var)
-    var = expr_->createVariable(name, val);
+    var = expr_->createVariable(uname, val);
   else
     var->setValue(val);
 
@@ -2139,19 +2565,17 @@ bool
 CPetBasic::
 setVariableValue(const std::string &name, const Inds &inds, const CExprValuePtr &value)
 {
-  std::cerr << "setVariableValue: " << name << " " << inds.size() << "\n";
+  auto uname = toUpper(name);
+
+  //std::cerr << "setVariableValue: " << uname << " "; printInds(inds); std::cerr << "\n";
 
   auto *th = const_cast<CPetBasic *>(this);
 
-  auto pv = th->arrayVariables_.find(name);
+  if (! hasArrayVariable(uname))
+    th->addArrayVariable(uname);
 
-  if (pv == th->arrayVariables_.end()) {
-    ArrayData arrayData;
-
-    arrayData.resize(10);
-
-    pv = th->arrayVariables_.insert(pv, ArrayVariables::value_type(name, arrayData));
-  }
+  auto pv = th->arrayVariables_.find(uname);
+  assert(pv != th->arrayVariables_.end());
 
   return (*pv).second.setValue(inds, value);
 }
@@ -2160,10 +2584,12 @@ CExprVariablePtr
 CPetBasic::
 getVariable(const std::string &name) const
 {
-  auto var = expr_->getVariable(name);
+  auto uname = toUpper(name);
+
+  auto var = expr_->getVariable(uname);
 
   if (! var) {
-    auto valueType = expr_->nameType(name);
+    auto valueType = expr_->nameType(uname);
 
     CExprValuePtr val;
 
@@ -2174,10 +2600,34 @@ getVariable(const std::string &name) const
     else
       val = expr_->createRealValue(0.0);
 
-    var = expr_->createVariable(name, val);
+    var = expr_->createVariable(uname, val);
   }
 
   return var;
+}
+
+bool
+CPetBasic::
+hasArrayVariable(const std::string &uname) const
+{
+  assert(uname == toUpper(uname));
+
+  auto pv = arrayVariables_.find(uname);
+
+  return (pv != arrayVariables_.end());
+}
+
+void
+CPetBasic::
+addArrayVariable(const std::string &uname)
+{
+  assert(uname == toUpper(uname));
+
+  ArrayData arrayData;
+
+  arrayData.resize(10);
+
+  arrayVariables_[uname] = arrayData;
 }
 
 //---
@@ -2214,7 +2664,7 @@ warnMsg(const std::string &msg) const
 
 bool
 CPetBasic::
-errorMsg(const std::string &msg)
+errorMsg(const std::string &msg) const
 {
   errorMsg_ = msg;
   return false;

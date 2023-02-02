@@ -133,6 +133,7 @@ getValueType() const
   return getValue()->getType();
 }
 
+#ifdef PET_EXPR
 CExprValuePtr
 CExprVariable::
 subscript(CExpr *expr, const CExprValueArray &values)
@@ -148,3 +149,4 @@ subscript(CExpr *expr, const CExprValueArray &values)
 
   return expr->variableSubscript(name_, values);
 }
+#endif

@@ -77,7 +77,9 @@ enum class CExprTokenType {
   FUNCTION           = 8,
   VALUE              = 9,
   BLOCK              = 10,
+#ifdef PET_EXPR
   VARIABLE_SUBSCRIPT = 11
+#endif
 };
 
 enum class CExprITokenType {

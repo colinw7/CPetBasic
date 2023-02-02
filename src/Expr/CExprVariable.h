@@ -32,7 +32,9 @@ class CExprVariable {
   CExprVariableObj *obj() const { return obj_; }
   void setObj(CExprVariableObj *obj) { obj_ = obj; }
 
+#ifdef PET_EXPR
   CExprValuePtr subscript(CExpr *expr, const CExprValueArray &values);
+#endif
 
   void print(std::ostream &os) const { os << name_; }
 
