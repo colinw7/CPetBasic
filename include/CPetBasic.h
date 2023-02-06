@@ -27,6 +27,7 @@ class CPetBasic {
   enum class KeywordType {
     NONE,
     CLOSE,
+    CLR,
     CONT,
     DATA,
     DIM,
@@ -99,10 +100,31 @@ class CPetBasic {
  public:
   CPetBasic();
 
+  virtual ~CPetBasic();
+
+  //---
+
+  bool isReplaceEmbedded() const { return replaceEmbedded_; }
+  void setReplaceEmbedded(bool b) { replaceEmbedded_ = b; }
+
+  bool isEmbeddedEscapes() const { return embeddedEscapes_; }
+  void setEmbeddedEscapes(bool b) { embeddedEscapes_ = b; }
+
+  bool isListHighlight() const { return listHighlight_; }
+  void setListHighlight(bool b) { listHighlight_ = b; }
+
+  bool isSplitStatements() const { return splitStatements_; }
+  void setSplitStatements(bool b) { splitStatements_ = b; }
+
+  // get/set debug
   bool isDebug() const { return debug_; }
   void setDebug(bool b) { debug_ = b; }
 
+  //---
+
   CPetBasicExpr *expr() const;
+
+  //---
 
   bool loadFile(const std::string &fileName);
 
@@ -112,8 +134,33 @@ class CPetBasic {
 
   void loop();
 
-  uchar getMemory(uint addr) { return memory_[addr]; }
-  void setMemory(uint addr, uchar value) { memory_[addr] = value; }
+  bool inputLine(const std::string &lineBuffer);
+
+  //---
+
+  bool isStopped() const { return stopped_; }
+  void setStopped(bool b) { stopped_ = b; }
+
+  //---
+
+  virtual void resize(uint nr, uint nc);
+
+  uint numRows() const { return nr_; }
+  uint numCols() const { return nc_; }
+
+  uchar getMemory(uint addr) const;
+  void setMemory(uint addr, uchar value);
+
+  virtual bool getScreenMemory(uint /*r*/, uint /*c*/, uchar& /*value*/) const { return false; }
+  virtual void setScreenMemory(uint /*r*/, uint /*c*/, uchar /*value*/) { }
+
+  virtual void delay() { }
+
+  //---
+
+  virtual void notifyRunLine(uint /*n*/) const { }
+
+  //---
 
   std::string keywordName(KeywordType keywordType) const;
 
@@ -132,6 +179,13 @@ class CPetBasic {
   bool hasArrayVariable(const std::string &name) const;
 
   void addArrayVariable(const std::string &name);
+
+  void clearArrayVariables();
+
+  //---
+
+  static uchar asciiToPet(uchar ascii, ulong utf, bool reverse);
+  static uchar petToAscii(uchar pet, ulong &utf, bool &reverse);
 
  private:
   bool replaceEmbedded(const std::string &str1, std::string &str2) const;
@@ -170,6 +224,10 @@ class CPetBasic {
     virtual double toReal   () const { return 0.0; }
     virtual bool   isReal   () const { return false; }
 
+    virtual void printEsc(std::ostream &os) const {
+      os << toString();
+    }
+
     virtual void print(std::ostream &os) const {
       os << toString();
     }
@@ -206,12 +264,24 @@ class CPetBasic {
       return str;
     }
 
-    void print(std::ostream &os) const override {
+    void printEsc(std::ostream &os) const override {
       if (keywordType_ == KeywordType::REM) {
         os << "[43mREM " << str_ << "[0m";
       }
       else {
         os << "[33m" << basic_->keywordName(keywordType_) << "[0m";
+
+        if (str_ != "")
+          os << " " << str_;
+      }
+    }
+
+    void print(std::ostream &os) const override {
+      if (keywordType_ == KeywordType::REM) {
+        os << "REM " << str_;
+      }
+      else {
+        os << basic_->keywordName(keywordType_);
 
         if (str_ != "")
           os << " " << str_;
@@ -228,8 +298,12 @@ class CPetBasic {
      Token(b, TokenType::VARIABLE, str) {
     }
 
-    void print(std::ostream &os) const override {
+    void printEsc(std::ostream &os) const override {
       os << "[31m" << str_ << "[0m";
+    }
+
+    void print(std::ostream &os) const override {
+      os << str_;
     }
   };
 
@@ -257,8 +331,12 @@ class CPetBasic {
 
     const OperatorType &operatorType() const { return operatorType_; }
 
-    void print(std::ostream &os) const override {
+    void printEsc(std::ostream &os) const override {
       os << "[32m" << str_ << "[0m";
+    }
+
+    void print(std::ostream &os) const override {
+      os << str_;
     }
 
    private:
@@ -283,8 +361,12 @@ class CPetBasic {
 
     const SeparatorType &separatorType() const { return separatorType_; }
 
-    void print(std::ostream &os) const override {
+    void printEsc(std::ostream &os) const override {
       os << "[34m" << str_ << "[0m";
+    }
+
+    void print(std::ostream &os) const override {
+      os << str_;
     }
 
    private:
@@ -301,8 +383,12 @@ class CPetBasic {
       return "\"" + str_ + "\"";
     }
 
-    void print(std::ostream &os) const override {
+    void printEsc(std::ostream &os) const override {
       os << "[35m\"" << str_ << "\"[0m";
+    }
+
+    void print(std::ostream &os) const override {
+      os << "\"" << str_ << "\"";
     }
   };
 
@@ -323,8 +409,12 @@ class CPetBasic {
     long   ivalue() const { return ivalue_; }
     double rvalue() const { return rvalue_; }
 
-    void print(std::ostream &os) const override {
+    void printEsc(std::ostream &os) const override {
       os << "[36m" << str_ << "[0m";
+    }
+
+    void print(std::ostream &os) const override {
+      os << str_;
     }
 
    private:
@@ -342,10 +432,11 @@ class CPetBasic {
   using Statements = std::vector<Statement>;
 
   struct LineData {
-    uint       lineNum { 0 };
-    uint       lineN   { 0 };
-    Tokens     tokens;
-    Statements statements;
+    std::string line;
+    uint        lineNum { 0 };
+    uint        lineN   { 0 };
+    Tokens      tokens;
+    Statements  statements;
   };
 
   using Lines = std::map<uint, LineData>;
@@ -382,7 +473,7 @@ class CPetBasic {
 
   bool parseLine(const std::string &line, uint lineNum, Tokens &tokens) const;
 
-  void printLine(const LineData &lineData) const;
+  void listLine(const LineData &lineData) const;
 
   //---
 
@@ -466,6 +557,7 @@ class CPetBasic {
   //---
 
   bool closeStatement  (TokenList &tokenList);
+  bool clrStatement    (TokenList &tokenList);
   bool contStatement   (TokenList &tokenList);
   bool dataStatement   (const std::string &str);
   bool dimStatement    (TokenList &tokenList);
@@ -478,15 +570,18 @@ class CPetBasic {
   bool inputStatement  (TokenList &tokenList);
   bool letStatement    (TokenList &tokenList);
   bool listStatement   (TokenList &tokenList);
+  bool loadStatement   (TokenList &tokenList);
   bool newStatement    (TokenList &tokenList);
   bool nextStatement   (TokenList &tokenList);
   bool onStatement     (TokenList &tokenList);
-  bool readStatement   (TokenList &tokenList);
+  bool openStatement   (TokenList &tokenList);
   bool pokeStatement   (TokenList &tokenList);
   bool printStatement  (TokenList &tokenList);
-  bool returnStatement (TokenList &tokenList);
+  bool readStatement   (TokenList &tokenList);
   bool restoreStatement(TokenList &tokenList);
+  bool returnStatement (TokenList &tokenList);
   bool runStatement    (TokenList &tokenList);
+  bool saveStatement   (TokenList &tokenList);
   bool stopStatement   (TokenList &tokenList);
 
   //---
@@ -500,9 +595,16 @@ class CPetBasic {
 
   void initRunState();
 
+  void initRun();
+  bool contRun();
+
   //---
 
-  void printString(const std::string &s) const;
+  virtual void printString(const std::string &s) const;
+
+  virtual std::string getString(const std::string &prompt) const;
+
+  virtual char getChar() const;
 
   //---
 
@@ -554,7 +656,11 @@ class CPetBasic {
   //---
 
   std::string fileName_;
-  bool        debug_;
+  bool        debug_           { false };
+  bool        listHighlight_   { false };
+  bool        replaceEmbedded_ { false };
+  bool        embeddedEscapes_ { false };
+  bool        splitStatements_ { false };
 
   mutable NameKeywordMap nameKeywords_;
   mutable KeywordNameMap keywordNames_;
@@ -585,6 +691,9 @@ class CPetBasic {
 
   //--
 
+  uint nr_ { 25 };
+  uint nc_ { 40 };
+
   Memory memory_;
 
   //---
@@ -603,7 +712,10 @@ class CPetBasic {
     }
 
     void resize(const Dims &dims) {
-      dims_ = dims;
+      dims_.clear();
+
+      for (const auto &dim : dims)
+        dims_.push_back(dim + 1); // 0 .. N
 
       uint n = 1;
 
@@ -632,6 +744,9 @@ class CPetBasic {
       }
 
       i1 += inds[n - 1];
+
+      if (i1 >= values_.size())
+        return CExprValuePtr();
 
       return values_[i1];
     }

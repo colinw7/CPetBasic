@@ -7,55 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
-
-int
-main(int argc, char **argv)
-{
-  using FileNames = std::vector<std::string>;
-
-  FileNames fileNames;
-  bool      list  = false;
-  bool      run   = false;
-  bool      loop  = false;
-  bool      debug = false;
-
-  for (int i = 1; i < argc; ++i) {
-    if (argv[i][0] == '-') {
-      auto arg = std::string(&argv[i][1]);
-
-      if      (arg == "list")
-        list = true;
-      else if (arg == "run")
-        run = true;
-      else if (arg == "loop")
-        loop = true;
-      else if (arg == "debug")
-        debug = true;
-    }
-    else
-      fileNames.push_back(argv[i]);
-  }
-
-  CPetBasic basic;
-
-  basic.setDebug(debug);
-
-  for (const auto &fileName : fileNames)
-    basic.loadFile(fileName);
-
-  if (list)
-    basic.list();
-
-  if (run)
-    basic.run();
-
-  if (loop)
-    basic.loop();
-
-  return 0;
-}
-
-//---
+#include <sstream>
 
 namespace {
 
@@ -74,7 +26,10 @@ class CPetBasicExpr : public CExpr {
   using Inds = std::vector<uint>;
 
  public:
-  CPetBasicExpr(CPetBasic *basic) : basic_(basic) { }
+  CPetBasicExpr(CPetBasic *basic) :
+   basic_(basic) {
+    setIgnoreCase(true);
+  }
 
   CExprValuePtr variableSubscript(const std::string &name,
                                   const CExprValueArray &inds) const override {
@@ -221,6 +176,24 @@ class CPetBasicChrFunction : public CPetBasicFunction {
   }
 };
 
+class CPetBasicExpFunction : public CPetBasicFunction {
+ public:
+  CPetBasicExpFunction(CPetBasic *basic) : CPetBasicFunction(basic) { }
+
+  CExprValuePtr exec(const CExprValueArray &values) override {
+    auto nv = values.size();
+    if (nv != 1) return errorMsg("Wrong number of arguments");
+
+    double r;
+    if (! values[0]->getRealValue(r))
+      return errorMsg("Wrong argument type");
+
+    auto r1 = std::exp(r);
+
+    return expr_->createRealValue(r1);
+  }
+};
+
 class CPetBasicIntFunction : public CPetBasicFunction {
  public:
   CPetBasicIntFunction(CPetBasic *basic) : CPetBasicFunction(basic) { }
@@ -331,6 +304,9 @@ class CPetBasicPeekFunction : public CPetBasicFunction {
     if (addr < 0 || addr >= 65536)
       return errorMsg("Invalid address");
 
+    if (addr == 0)
+      basic_->delay();
+
     auto value = basic_->getMemory(uint(addr) & 0xFFFF);
 
     return expr_->createIntegerValue(value);
@@ -373,6 +349,24 @@ class CPetBasicRndFunction : public CPetBasicFunction {
   }
 };
 
+class CPetBasicSgnFunction : public CPetBasicFunction {
+ public:
+  CPetBasicSgnFunction(CPetBasic *basic) : CPetBasicFunction(basic) { }
+
+  CExprValuePtr exec(const CExprValueArray &values) override {
+    auto nv = values.size();
+    if (nv != 1) return errorMsg("Wrong number of arguments");
+
+    double r;
+    if (! values[0]->getRealValue(r))
+      return errorMsg("Wrong argument type");
+
+    auto i = (r != 0 ? (r < 0 ? -1 : 1) : 0);
+
+    return expr_->createIntegerValue(i);
+  }
+};
+
 class CPetBasicSinFunction : public CPetBasicFunction {
  public:
   CPetBasicSinFunction(CPetBasic *basic) : CPetBasicFunction(basic) { }
@@ -391,6 +385,45 @@ class CPetBasicSinFunction : public CPetBasicFunction {
   }
 };
 
+class CPetBasicSqrFunction : public CPetBasicFunction {
+ public:
+  CPetBasicSqrFunction(CPetBasic *basic) : CPetBasicFunction(basic) { }
+
+  CExprValuePtr exec(const CExprValueArray &values) override {
+    auto nv = values.size();
+    if (nv != 1) return errorMsg("Wrong number of arguments");
+
+    double r;
+    if (! values[0]->getRealValue(r))
+      return errorMsg("Wrong argument type");
+
+    if (r < 0)
+      return errorMsg("Domain error");
+
+    auto r1 = std::sqrt(r);
+
+    return expr_->createRealValue(r1);
+  }
+};
+
+class CPetBasicStrsFunction : public CPetBasicFunction {
+ public:
+  CPetBasicStrsFunction(CPetBasic *basic) : CPetBasicFunction(basic) { }
+
+  CExprValuePtr exec(const CExprValueArray &values) override {
+    auto nv = values.size();
+    if (nv != 1) return errorMsg("Wrong number of arguments");
+
+    double r;
+    if (! values[0]->getRealValue(r))
+      return errorMsg("Wrong argument type");
+
+    auto s = std::to_string(r);
+
+    return expr_->createStringValue(s);
+  }
+};
+
 class CPetBasicTanFunction : public CPetBasicFunction {
  public:
   CPetBasicTanFunction(CPetBasic *basic) : CPetBasicFunction(basic) { }
@@ -406,6 +439,55 @@ class CPetBasicTanFunction : public CPetBasicFunction {
     auto r1 = std::tan(r);
 
     return expr_->createRealValue(r1);
+  }
+};
+
+class CPetBasicSpcFunction : public CPetBasicFunction {
+ public:
+  CPetBasicSpcFunction(CPetBasic *basic) : CPetBasicFunction(basic) { }
+
+  CExprValuePtr exec(const CExprValueArray &values) override {
+    auto nv = values.size();
+    if (nv != 1) return errorMsg("Wrong number of arguments");
+
+    long i;
+    if (! values[0]->getIntegerValue(i))
+      return errorMsg("Wrong argument type");
+
+    std::string s;
+    for ( ; i > 0; --i)
+      s += " ";
+
+    return expr_->createStringValue(s);
+  }
+};
+
+class CPetBasicTabFunction : public CPetBasicFunction {
+ public:
+  CPetBasicTabFunction(CPetBasic *basic) : CPetBasicFunction(basic) { }
+
+  CExprValuePtr exec(const CExprValueArray &values) override {
+    auto nv = values.size();
+    if (nv != 1) return errorMsg("Wrong number of arguments");
+
+    int currentPos = 0; // TODO
+
+    long newPos;
+    if (! values[0]->getIntegerValue(newPos))
+      return errorMsg("Wrong argument type");
+
+    std::string s;
+
+    if (newPos < currentPos) {
+      s += "\n";
+
+      currentPos = 0;
+    }
+
+    for ( ; currentPos < newPos; ++currentPos)
+      s += " ";
+
+    return expr_->createStringValue(s);
   }
 };
 
@@ -491,10 +573,8 @@ CPetBasic()
   expr_->addFunction("ATN"   , "r"    , new CPetBasicAtnFunction   (this));
   expr_->addFunction("CHR$"  , "i"    , new CPetBasicChrFunction   (this));
   expr_->addFunction("COS"   , "r"    , new CPetBasicCosFunction   (this));
-//expr_->addFunction("DS"    , "s"    , new CPetBasicDsFunction    (this));
-//expr_->addFunction("DS$"   , "s"    , new CPetBasicDssFunction   (this));
-//expr_->addFunction("EXP"   , "r"    , new CPetBasicExpFunction   (this));
-//expr_->addFunction("ERE"   , "s"    , new CPetBasicEreFunction   (this));
+  expr_->addFunction("EXP"   , "r"    , new CPetBasicExpFunction   (this));
+//expr_->addFunction("FRE"   , "s"    , new CPetBasicFreFunction   (this));
   expr_->addFunction("INT"   , "r"    , new CPetBasicIntFunction   (this));
   expr_->addFunction("LEFT$" , "s,i"  , new CPetBasicLeftFunction  (this));
   expr_->addFunction("LEN"   , "s"    , new CPetBasicLenFunction   (this));
@@ -504,19 +584,26 @@ CPetBasic()
 //expr_->addFunction("POS"   , "s"    , new CPetBasicPosFunction   (this));
   expr_->addFunction("RIGHT$", "s,i"  , new CPetBasicRightFunction (this));
   expr_->addFunction("RND"   , "s"    , new CPetBasicRndFunction   (this));
-//expr_->addFunction("SGN"   , "r"    , new CPetBasicSgnFunction   (this));
+  expr_->addFunction("SGN"   , "r"    , new CPetBasicSgnFunction   (this));
   expr_->addFunction("SIN"   , "s"    , new CPetBasicSinFunction   (this));
-//expr_->addFunction("SPC"   , "s"    , new CPetBasicSpcFunction   (this));
-//expr_->addFunction("SQR"   , "r"    , new CPetBasicSqrFunction   (this));
-//expr_->addFunction("STATUS", "s"    , new CPetBasicStatusFunction(this));
-//expr_->addFunction("STRS"  , "s"    , new CPetBasicStrsFunction  (this));
-//expr_->addFunction("TAB"   , "s"    , new CPetBasicTabFunction   (this));
-//expr_->addFunction("TAN"   , "r"    , new CPetBasicTanFunction   (this));
-//expr_->addFunction("TIME$" , "s"    , new CPetBasicTimeFunction  (this));
+  expr_->addFunction("SPC"   , "i"    , new CPetBasicSpcFunction   (this));
+  expr_->addFunction("SQR"   , "r"    , new CPetBasicSqrFunction   (this));
+  expr_->addFunction("STR$"  , "r"    , new CPetBasicStrsFunction  (this));
+  expr_->addFunction("TAB"   , "s"    , new CPetBasicTabFunction   (this));
+  expr_->addFunction("TAN"   , "r"    , new CPetBasicTanFunction   (this));
 //expr_->addFunction("USR"   , "s"    , new CPetBasicUsrFunction   (this));
   expr_->addFunction("VAL"   , "s"    , new CPetBasicValFunction   (this));
 
-  expr_->createUserVariable("TI", new CPetBasicTIVar(this));
+//expr_->createUserVariable("DS"    , new CPetBasicDSVar    (this));
+//expr_->createUserVariable("DS$"   , new CPetBasicDSSVar   (this));
+  expr_->createUserVariable("TI"    , new CPetBasicTIVar    (this));
+//expr_->createUserVariable("TI$"   , new CPetBasicTISVar   (this));
+//expr_->createUserVariable("STATUS", new CPetBasicStatusVar(this));
+}
+
+CPetBasic::
+~CPetBasic()
+{
 }
 
 bool
@@ -655,6 +742,7 @@ parseLine(uint lineNum, const std::string &line, LineData &lineData) const
   while (! parse.eof())
     codeStr += parse.readChar();
 
+  lineData.line    = line;
   lineData.lineNum = lineNum;
   lineData.lineN   = uint(n);
 
@@ -800,7 +888,7 @@ parseLine(const std::string &line, uint lineNum, Tokens &tokens) const
 
           std::string str2;
 
-          if (replaceEmbedded(str1, str2))
+          if (isReplaceEmbedded() && replaceEmbedded(str1, str2))
             tokenStr += str2;
           else
             tokenStr += "[" + str1 + "]";
@@ -932,47 +1020,103 @@ replaceEmbedded(const std::string &str1, std::string &str2) const
       return false;
   };
 
+  auto appendN = [](std::string &str, long n, auto c) {
+    for (long i = 0; i < n; ++i)
+      str += c;
+  };
+
   long n;
 
-  if      (str1 == "CLS") { // 47
-    str2 += "[2]";
+  // SHIFT +128
+  // INVERSE +64
+
+  if      (str1 == "HOM") { // 19 (octal 23)
+    if (isEmbeddedEscapes())
+      str2 += "[0,0H";
+    else
+      str2 += '\023';
     return true;
   }
-  else if (str1 == "REV") { // 18
-    str2 += "[7m";
+  else if (str1 == "CLS") { // 147 (octal 223)
+    if (isEmbeddedEscapes())
+      str2 += "[2]";
+    else
+      str2 += '\223';
     return true;
   }
-  else if (str1 == "OFF") { // 146
-    str2 += "[0m";
+  else if (str1 == "STP") { // 3 (octal 3)
+    assert(false); // TODO
+    return false;
+  }
+  else if (str1 == "PI") { // 255 (octal 377)
+    assert(false); // TODO
+    return false;
+  }
+  else if (str1 == "INS") { // 148 (octal 224)
+    assert(false); // TODO
+    return false;
+  }
+  else if (str1 == "REV") { // 18 (octal 22)
+    if (isEmbeddedEscapes())
+      str2 += "[7m";
+    else
+      str2 += '\022';
     return true;
   }
-  else if (str1 == "HOM") { // 19
-    str2 += "[0,0H";
+  else if (str1 == "OFF") { // 146 (octal 222)
+    if (isEmbeddedEscapes())
+      str2 += "[0m";
+    else
+      str2 += '\222';
     return true;
   }
-  else if (parseNumeric("CU", "", n)) {  // 145
-    str2 += "[" + std::to_string(n) + "A";
+  else if (parseNumeric("CU", "", n)) {  // 145 (octal 221)
+    if (isEmbeddedEscapes())
+      str2 += "[" + std::to_string(n) + "A";
+    else
+      appendN(str2, n, uchar(145));
     return true;
   }
-  else if (parseNumeric("CD", "", n)) { // 17
-    str2 += "[" + std::to_string(n) + "B";
+  else if (parseNumeric("CD", "", n)) { // 17 (octal 21)
+    if (isEmbeddedEscapes())
+      str2 += "[" + std::to_string(n) + "B";
+    else
+      appendN(str2, n, uchar(17));
     return true;
   }
-  else if (parseNumeric("CL", "", n)) { // 157
-    str2 += "[" + std::to_string(n) + "D";
+  else if (parseNumeric("CL", "", n)) { // 157 (octal 235)
+    if (isEmbeddedEscapes())
+      str2 += "[" + std::to_string(n) + "D";
+    else
+      appendN(str2, n, uchar(157));
     return true;
   }
-  else if (parseNumeric("CR", "", n)) { // 29
-    str2 += "[" + std::to_string(n) + "C";
+  else if (parseNumeric("CR", "", n)) { // 29 (octal 35)
+    if (isEmbeddedEscapes())
+      str2 += "[" + std::to_string(n) + "C";
+    else
+      appendN(str2, n, uchar(29));
     return true;
   }
-  else if (parseNumeric("SPC", " ", n)) { // 32
+  else if (parseNumeric("SPC", " ", n)) { // 32 (octal 40)
     return true;
   }
-  else if (parseNumeric("^SPC", " ", n)) { // 160
+  else if (parseNumeric("^SPC", "", n)) { // 160 (octal 240)
+    char c;
+    if (isEmbeddedEscapes())
+      c = ' '; // TODO
+    else
+      c = '\240';
+    appendN(str2, n, c);
     return true;
   }
-  else if (parseNumeric("^V", "\u2715", n)) { // 214
+  else if (parseNumeric("^V", "", n)) { // 214 (octal 326)
+    std::string c;
+    if (isEmbeddedEscapes())
+      c = "\u2715";
+    else
+      c = '\326';
+    appendN(str2, n, c);
     return true;
   }
 
@@ -1020,7 +1164,7 @@ initKeywords() const
 //  addKeyword(KeywordType::APPEND   , "APPEND"   );
 //  addKeyword(KeywordType::BACKUP   , "BACKUP"   );
     addKeyword(KeywordType::CLOSE    , "CLOSE"    );
-//  addKeyword(KeywordType::CLR      , "CLR"      );
+    addKeyword(KeywordType::CLR      , "CLR"      );
 //  addKeyword(KeywordType::CMD      , "CMD"      );
 //  addKeyword(KeywordType::COLLECT  , "COLLECT"  );
 //  addKeyword(KeywordType::CONCAT   , "CONCAT"   );
@@ -1076,35 +1220,71 @@ CPetBasic::
 list()
 {
   for (const auto &pl : lines_)
-    printLine(pl.second);
+    listLine(pl.second);
 }
 
 void
 CPetBasic::
-printLine(const LineData &lineData) const
+listLine(const LineData &lineData) const
 {
+  static std::string sepCharsL = ",;:()=+-";
+  static std::string sepCharsR = ",;:()=+-";
+
   int ns = int(std::log10(lineData.lineN) + 1);
 
   int is = 0;
 
   for (const auto &statement : lineData.statements) {
+    char lastChar = '\0';
+
     if (is == 0)
-      std::cout << lineData.lineN;
+      std::cout << lineData.lineN << " ";
     else {
-      for (int i = 0; i < ns; ++i)
-        std::cout << " ";
+      if (isSplitStatements()) {
+        std::cout << "\n";
+
+        for (int i = 0; i < ns; ++i)
+          std::cout << " ";
+      }
+      else {
+        std::cout << ":";
+
+        lastChar = ':';
+      }
     }
 
     for (auto *token : statement.tokens) {
-      std::cout << " ";
+      std::stringstream ss;
 
-      token->print(std::cout);
+      if (isListHighlight())
+        token->printEsc(ss);
+      else
+        token->print(ss);
+
+      auto s = ss.str();
+
+      auto firstChar = s[0];
+
+      bool needsSpace = true;
+
+      if (sepCharsL.find(firstChar) != std::string::npos)
+        needsSpace = false;
+
+      if (sepCharsR.find(lastChar) != std::string::npos)
+        needsSpace = false;
+
+      if (needsSpace)
+        std::cout << " ";
+
+      std::cout << s;
+
+      lastChar = s[s.size() - 1];
     }
-
-    std::cout << "\n";
 
     ++is;
   }
+
+  std::cout << "\n";
 }
 
 bool
@@ -1118,6 +1298,15 @@ run()
 
   //---
 
+  initRun();
+
+  return contRun();
+}
+
+void
+CPetBasic::
+initRun()
+{
   // build lines vector
   lineNums_.clear();
   lineInds_.clear();
@@ -1137,7 +1326,12 @@ run()
   //---
 
   lineInd_ = 0;
+}
 
+bool
+CPetBasic::
+contRun()
+{
   while (lineInd_ >= 0 && uint(lineInd_) < lineNums_.size()) {
     auto lineNum = lineNums_[lineInd_];
 
@@ -1145,15 +1339,18 @@ run()
     assert(pl != lines_.end());
 
     if (! runLine((*pl).second)) {
-      warnMsg("Error: " + errorMsg_);
+      if (errorMsg_ != "")
+        warnMsg("Error: " + errorMsg_ + " @" + std::to_string(lineNum));
+      else
+        warnMsg("Error: " + (*pl).second.line + " @" + std::to_string(lineNum));
       return false;
     }
 
-    if (stopped_)
+    if (isStopped())
       break;
   }
 
-  stopped_ = false;
+  setStopped(false);
 
   return true;
 }
@@ -1187,30 +1384,13 @@ loop()
       if (lineBuffer == "")
         break;
 
-      LineData lineData;
-
-      if (parseLine(0, lineBuffer, lineData)) {
-        processLineData(lineData);
-
-        if (lineData.lineN > 0)
-          lines_[lineData.lineN] = lineData;
-        else {
-          if (! runLine(lineData)) {
-            if (errorMsg_ != "")
-              warnMsg("Invalid Line: " + lineBuffer + " (" + errorMsg_ + ")");
-            else
-              warnMsg("Invalid Line: " + lineBuffer);
-          }
-        }
-      }
-      else
-        warnMsg("Invalid Line: " + lineBuffer);
+      (void) inputLine(lineBuffer);
 
       lineBuffer = "";
 
       setPrompt();
 
-      if (stopped_)
+      if (isStopped())
         break;
     }
 
@@ -1220,12 +1400,43 @@ loop()
 
 bool
 CPetBasic::
+inputLine(const std::string &lineBuffer)
+{
+  LineData lineData;
+
+  if (parseLine(0, lineBuffer, lineData)) {
+    processLineData(lineData);
+
+    if (lineData.lineN > 0)
+      lines_[lineData.lineN] = lineData;
+    else {
+      if (! runLine(lineData)) {
+        if (errorMsg_ != "")
+          warnMsg("Invalid Line: " + lineBuffer + " (" + errorMsg_ + ")");
+        else
+          warnMsg("Invalid Line: " + lineBuffer);
+        return false;
+      }
+    }
+  }
+  else {
+    warnMsg("Invalid Line: " + lineBuffer);
+    return false;
+  }
+
+  return true;
+}
+
+bool
+CPetBasic::
 runLine(const LineData &lineData)
 {
+  notifyRunLine(lineData.lineN);
+
   errorMsg_= "";
 
   if (isDebug())
-    printLine(lineData);
+    listLine(lineData);
 
   bool nextLine = true;
 
@@ -1267,6 +1478,9 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
       case KeywordType::CLOSE:
         rc = closeStatement(tokenList);
         break;
+      case KeywordType::CLR:
+        rc = clrStatement(tokenList);
+        break;
       case KeywordType::CONT:
         rc = contStatement(tokenList);
         break;
@@ -1278,9 +1492,6 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
         break;
       case KeywordType::END:
         rc = endStatement(tokenList);
-        break;
-      case KeywordType::IF:
-        rc = ifStatement(lineN, tokenList, nextLine);
         break;
       case KeywordType::FOR:
         rc = forStatement(lineN, tokenList);
@@ -1296,6 +1507,9 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
         rc = gotoStatement(tokenList);
         nextLine = false;
         break;
+      case KeywordType::IF:
+        rc = ifStatement(lineN, tokenList, nextLine);
+        break;
       case KeywordType::INPUT:
         rc = inputStatement(tokenList);
         break;
@@ -1304,6 +1518,9 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
         break;
       case KeywordType::LIST:
         rc = listStatement(tokenList);
+        break;
+      case KeywordType::LOAD:
+        rc = loadStatement(tokenList);
         break;
       case KeywordType::NEW:
         rc = newStatement(tokenList);
@@ -1316,6 +1533,9 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
         rc = onStatement(tokenList);
         nextLine = false;
         break;
+      case KeywordType::OPEN:
+        rc = openStatement(tokenList);
+        break;
       case KeywordType::POKE:
         rc = pokeStatement(tokenList);
         break;
@@ -1325,17 +1545,20 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
       case KeywordType::READ:
         rc = readStatement(tokenList);
         break;
-      case KeywordType::RETURN:
-        rc = returnStatement(tokenList);
+      case KeywordType::REM:
+        rc = true;
         break;
       case KeywordType::RESTORE:
         rc = restoreStatement(tokenList);
         break;
-      case KeywordType::REM:
-        rc = true;
+      case KeywordType::RETURN:
+        rc = returnStatement(tokenList);
         break;
       case KeywordType::RUN:
         rc = runStatement(tokenList);
+        break;
+      case KeywordType::SAVE:
+        rc = saveStatement(tokenList);
         break;
       case KeywordType::STOP:
         rc = stopStatement(tokenList);
@@ -1419,13 +1642,66 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
       }
     }
     else {
-      return errorMsg("Invalid token '" + token1->str() + "'");
+      if (token1)
+        return errorMsg("Invalid token '" + token1->str() + "'");
+      else
+        return errorMsg("Invalid token");
     }
   }
   else
     return errorMsg("Invalid run token " + token->listString());
 
   return true;
+}
+
+//---
+
+void
+CPetBasic::
+resize(uint nr, uint nc)
+{
+  nr_ = nr;
+  nc_ = nc;
+}
+
+uchar
+CPetBasic::
+getMemory(uint addr) const
+{
+  if (addr >= 0x8000 && addr <= 0x87ff) {
+    uint pos = addr - 0x8000;
+
+    uint r = pos/nc_;
+    uint c = pos - r*nc_;
+    assert(r < nr_ && c < nc_);
+
+    uchar value;
+
+    if (getScreenMemory(r, c, value))
+      return value;
+  }
+
+  auto p = memory_.find(addr);
+  if (p == memory_.end()) return 0;
+
+  return (*p).second;
+}
+
+void
+CPetBasic::
+setMemory(uint addr, uchar value)
+{
+  memory_[addr] = value;
+
+  if (addr >= 0x8000 && addr <= 0x87ff) {
+    uint pos = addr - 0x8000;
+
+    uint r = pos/nc_;
+    uint c = pos - r*nc_;
+    assert(r < nr_ && c < nc_);
+
+    setScreenMemory(r, c, value);
+  }
 }
 
 //---
@@ -1566,14 +1842,38 @@ bool
 CPetBasic::
 closeStatement(TokenList &)
 {
+  assert(false);
   return false;
 }
 
 bool
 CPetBasic::
-contStatement(TokenList &)
+clrStatement(TokenList &tokenList)
 {
-  return false;
+  if (tokenList.atEnd())
+    return errorMsg("Extra tokens");
+
+  clearArrayVariables();
+
+  expr_ = std::make_unique<CPetBasicExpr>(this);
+
+  return true;
+}
+
+bool
+CPetBasic::
+contStatement(TokenList &tokenList)
+{
+  if (tokenList.atEnd())
+    return errorMsg("Extra tokens");
+
+  if (isStopped()) {
+    setStopped(false);
+
+    contRun();
+  }
+
+  return true;
 }
 
 bool
@@ -1622,7 +1922,7 @@ bool
 CPetBasic::
 endStatement(TokenList &)
 {
-  stopped_ = true;
+  setStopped(true);
 
   return true;
 }
@@ -1807,13 +2107,12 @@ getStatement(TokenList &tokenList)
   else if (token->type() != TokenType::SEPARATOR)
     return errorMsg("Invalid GET token '" + token->str() + "'");
 
-  CReadLine readline;
+  auto c = getChar();
 
-  readline.setPrompt("? ");
+  std::string s;
+  if (c) { s += c; }
 
-  auto line = toUpper(readline.readLine());
-
-  auto val = expr_->createStringValue(line);
+  auto val = expr_->createStringValue(s);
 
   if (! setVariableValue(varName, val))
     return false;
@@ -1892,12 +2191,8 @@ inputStatement(TokenList &tokenList)
     token = tokenList.nextToken();
   }
 
-  CReadLine readline;
-
-  readline.setPrompt(prompt != "" ? prompt + " ? " : "? ");
-
   for (const auto &varName : varNames) {
-    auto line = readline.readLine();
+    auto line = getString(prompt);
 
     auto val = expr_->createStringValue(line);
 
@@ -1946,9 +2241,18 @@ bool
 CPetBasic::
 listStatement(TokenList &)
 {
+  // TODO: list from line
   list();
 
   return true;
+}
+
+bool
+CPetBasic::
+loadStatement(TokenList &)
+{
+  assert(false);
+  return false;
 }
 
 bool
@@ -2017,7 +2321,7 @@ nextStatement(TokenList &tokenList)
     if (! forData.toVal_->getIntegerValue(toI))
       return errorMsg("Invalid FOR TO value");
 
-    if ((stepI > 0 && fromI < toI) || (stepI < 0 && fromI > toI)) { // not at end
+    if ((stepI > 0 && fromI <= toI) || (stepI < 0 && fromI >= toI)) { // not at end
       auto lineInd = getLineInd(forData.lineNum_);
       if (lineInd < 0) return errorMsg("Invalid GOTO line");
 
@@ -2089,9 +2393,20 @@ onStatement(TokenList &tokenList)
   auto lineInd = getLineInd(uint(lines[i - 1]));
   if (lineInd < 0) return errorMsg("Invalid ON line");
 
+  if (gosubFlag)
+    lineStack_.push_back(lineInd_);
+
   lineInd_ = lineInd;
 
   return true;
+}
+
+bool
+CPetBasic::
+openStatement(TokenList &)
+{
+  assert(false);
+  return false;
 }
 
 bool
@@ -2102,15 +2417,33 @@ pokeStatement(TokenList &tokenList)
 
   auto *token = tokenList.nextToken();
 
-  while (token && ! isSeparator(token, SeparatorType::COMMA)) {
+  // get first expression
+  int brackets = 0;
+
+  while (token) {
+    if (brackets <= 0) {
+      if (isSeparator(token, SeparatorType::COMMA))
+        break;
+    }
+
+    if      (isSeparator(token, SeparatorType::OPEN_RBRACKET)) {
+      ++brackets;
+    }
+    else if (isSeparator(token, SeparatorType::CLOSE_RBRACKET)) {
+      --brackets;
+    }
+
     tokens1.push_back(token);
 
     token = tokenList.nextToken();
   }
 
   if (! token || ! isSeparator(token, SeparatorType::COMMA))
-    return errorMsg("Missing POKE comma");
+    return errorMsg("Missing POKE comma expression separator");
 
+  //---
+
+  // get second expression
   Tokens tokens2;
 
   token = tokenList.nextToken();
@@ -2120,6 +2453,8 @@ pokeStatement(TokenList &tokenList)
 
     token = tokenList.nextToken();
   }
+
+  //---
 
   auto addrValue  = evalExpr(tokens1);
   auto valueValue = evalExpr(tokens2);
@@ -2151,7 +2486,7 @@ printStatement(TokenList &tokenList)
     SEMI_COLON
   };
 
-  Spacer nextSpacer { Spacer::NONE };
+  Spacer nextSpacer { Spacer::SEMI_COLON };
 
   while (true) {
     auto spacer = nextSpacer;
@@ -2161,14 +2496,25 @@ printStatement(TokenList &tokenList)
     auto *token = tokenList.nextToken();
     if (! token) break;
 
+    int brackets = 0;
+
     while (token) {
-      if      (isSeparator(token, SeparatorType::COMMA)) {
-        nextSpacer = Spacer::COMMA;
-        break;
+      if (brackets <= 0) {
+        if      (isSeparator(token, SeparatorType::COMMA)) {
+          nextSpacer = Spacer::COMMA;
+          break;
+        }
+        else if (isSeparator(token, SeparatorType::SEMI_COLON)) {
+          nextSpacer = Spacer::SEMI_COLON;
+          break;
+        }
       }
-      else if (isSeparator(token, SeparatorType::SEMI_COLON)) {
-        nextSpacer = Spacer::SEMI_COLON;
-        break;
+
+      if      (isSeparator(token, SeparatorType::OPEN_RBRACKET)) {
+        ++brackets;
+      }
+      else if (isSeparator(token, SeparatorType::CLOSE_RBRACKET)) {
+        --brackets;
       }
 
       tokens1.push_back(token);
@@ -2246,6 +2592,18 @@ readStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
+restoreStatement(TokenList &tokenList)
+{
+  if (! tokenList.atEnd())
+    return errorMsg("Extra arguments ");
+
+  dataValuePos_ = 0;
+
+  return true;
+}
+
+bool
+CPetBasic::
 returnStatement(TokenList &tokenList)
 {
   if (! tokenList.atEnd())
@@ -2262,18 +2620,6 @@ returnStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-restoreStatement(TokenList &tokenList)
-{
-  if (! tokenList.atEnd())
-    return errorMsg("Extra arguments ");
-
-  dataValuePos_ = 0;
-
-  return true;
-}
-
-bool
-CPetBasic::
 runStatement(TokenList &)
 {
   run();
@@ -2283,9 +2629,17 @@ runStatement(TokenList &)
 
 bool
 CPetBasic::
+saveStatement(TokenList &)
+{
+  assert(false);
+  return false;
+}
+
+bool
+CPetBasic::
 stopStatement(TokenList &)
 {
-  stopped_ = true;
+  setStopped(true);
 
   return true;
 }
@@ -2410,7 +2764,8 @@ initRunState()
   lineStack_.clear();
   forDatas_ .clear();
 
-  stopped_  = false;
+  setStopped(false);
+
   errorMsg_ = "";
 
   lineInd_ = -1;
@@ -2425,6 +2780,30 @@ printString(const std::string &s) const
   for (const auto &c : s) {
     std::cout << c;
   }
+}
+
+char
+CPetBasic::
+getChar() const
+{
+  CReadLine readline;
+
+  readline.setPrompt("? ");
+
+  auto line = toUpper(readline.readLine());
+
+  return (line.size() ? line[0] : '\0');
+}
+
+std::string
+CPetBasic::
+getString(const std::string &prompt) const
+{
+  CReadLine readline;
+
+  readline.setPrompt(prompt != "" ? prompt + " ? " : "? ");
+
+  return readline.readLine();
 }
 
 //---
@@ -2630,6 +3009,13 @@ addArrayVariable(const std::string &uname)
   arrayVariables_[uname] = arrayData;
 }
 
+void
+CPetBasic::
+clearArrayVariables()
+{
+  arrayVariables_.clear();
+}
+
 //---
 
 int
@@ -2668,4 +3054,263 @@ errorMsg(const std::string &msg) const
 {
   errorMsg_ = msg;
   return false;
+}
+
+//---
+
+uchar
+CPetBasic::
+asciiToPet(uchar ascii, ulong utf, bool reverse)
+{
+  uchar offset = (reverse ? 128 : 0);
+
+  if (utf > 0) {
+    auto utfToPet1 = [](ulong utf1) -> uchar {
+      switch (utf1) {
+//      case 0     : return 64 ; // horizontal mid line
+        case 0x2660: return 65 ; // spades suit
+//      case 0     : return 66 ; // vertical line 1
+//      case 0     : return 67 ; // horizontal line 1
+//      case 0     : return 68 ; // horizontal line 2
+//      case 0     : return 69 ; // horizontal line 3
+//      case 0     : return 70 ; // horizontal line 4
+//      case 0     : return 71 ; // vertical line 2
+//      case 0     : return 72 ; // vertical line 3
+        case 0x256e: return 73 ; // round corner ll
+        case 0x2570: return 74 ; // round corner ur
+        case 0x256f: return 75 ; // round corner ul
+//      case 0     : return 76 ; // square corner ll
+        case 0x2572: return 77 ; // diagonal tl->br
+        case 0x2571: return 78 ; // diagonal bl->tr
+//      case 0     : return 79 ; // square corner tl
+//      case 0     : return 80 ; // square corner tr
+        case 0x25cf: return 81 ; // white filled circle, black square
+//      case 0     : return 82 ; // horizontal line 5
+        case 0x2665: return 83 ; // hearts suit
+//      case 0     : return 84 ; // vertical line 4
+        case 0x256d: return 85 ; // round corner lr
+        case 0x2573: return 86 ; // cross
+        case 0x25cb: return 87 ; // white stroked circle, black square
+        case 0x2663: return 88 ; // clubs suit
+//      case 0     : return 89 ; // vertical line 5
+        case 0x2666: return 90 ; // diamonds suit
+        case 0x253c: return 91 ; // plus
+//      case 0     : return 92 ; // hash fill left half
+        case 0x2502: return 93 ; // vertical line 5
+        case 0x0360: return 94 ; // pi
+        case 0x25e5: return 95 ; // filled tr triangle
+//      case 0     : return 96 ; // space
+        case 0x258c: return 97 ; // filled left side
+        case 0x2584: return 98 ; // filled bottom side
+        case 0x2594: return 99 ; // filled top side
+        case 0x2581: return 100; // horizontal line bottom
+        case 0x258f: return 101; // vertical line left
+        case 0x2592: return 102; // hash fill
+        case 0x2595: return 103; // line top and right
+//      case 0     : return 104; // hash fill bottom half
+        case 0x25e4: return 105; // filled tl triangle
+//      case 0     : return 106; // thick line right
+        case 0x251c: return 107; // vertical line mid and to right
+        case 0x2597: return 108; // filled br quarter
+        case 0x2514: return 109; // stroked tr quarter
+        case 0x2510: return 110; // stroked bl quarter
+        case 0x2582: return 111; // thick line bottom
+        case 0x250c: return 112; // stroked br quarter
+        case 0x2534: return 113; // horizontal line mid and to top
+        case 0x252c: return 114; // horizontal line mid and to bottom
+        case 0x2524: return 115; // vertical line mid and to left
+        case 0x258e: return 116; // thick line left
+        case 0x258d: return 117; // double thick line left
+//      case 0     : return 118; // double thick line right
+//      case 0     : return 119; // double thick line top
+//      case 0     : return 120; // triple thick line top
+        case 0x2583: return 121; // quadruple thick line bottom
+//      case 0     : return 122; // stroked br quarter
+        case 0x2596: return 123; // filled bl quarter
+        case 0x259d: return 124; // filled tr quarter
+        case 0x2518: return 125; // stroked tl quarter
+        case 0x2598: return 126; // filled tl quarter
+        case 0x259a: return 127; // filled tl and br quarter
+        default    : return 32;
+      }
+    };
+
+    return utfToPet1(utf) + offset;
+  }
+
+  auto asciiToPet1 = [](uchar ascii1) -> uchar {
+    switch (ascii1) {
+      case '@': return 0;
+      case 'A': case 'B': case 'C': case 'D': case 'E': case 'F': case 'G': case 'H':
+      case 'I': case 'J': case 'K': case 'L': case 'M': case 'N': case 'O': case 'P':
+      case 'Q': case 'R': case 'S': case 'T': case 'U': case 'V': case 'W': case 'X':
+      case 'Y': case 'Z':
+        return (ascii1 - 'A' + 1);
+      case 'a': case 'b': case 'c': case 'd': case 'e': case 'f': case 'g': case 'h':
+      case 'i': case 'j': case 'k': case 'l': case 'm': case 'n': case 'o': case 'p':
+      case 'q': case 'r': case 's': case 't': case 'u': case 'v': case 'w': case 'x':
+      case 'y': case 'z':
+        return (ascii1 - 'a' + 1);
+      case '[': return 27;
+      case '\\': return 28;
+      case ']': return 29;
+      case '^': return 30;
+      case '~': return 31;
+      case ' ': return 32;
+      case '!': return 33;
+      case '"': return 34;
+      case '#': return 35;
+      case '$': return 36;
+      case '%': return 37;
+      case '&': return 38;
+      case '\'': return 39;
+      case '(': return 40;
+      case ')': return 41;
+      case '*': return 42;
+      case '+': return 43;
+      case ',': return 44;
+      case '-': return 45;
+      case '.': return 46;
+      case '/': return 47;
+      case '0': case '1': case '2': case '3': case '4':
+      case '5': case '6': case '7': case '8': case '9':
+        return (ascii1 - '0' + 48);
+      case ':': return 58;
+      case ';': return 59;
+      case '<': return 60;
+      case '=': return 61;
+      case '>': return 62;
+      case '?': return 63;
+      // 64-127 : graphic characters
+      default: return 32;
+    }
+  };
+
+  return asciiToPet1(ascii) + offset;
+}
+
+uchar
+CPetBasic::
+petToAscii(uchar pet, ulong &utf, bool &reverse)
+{
+  utf     = 0;
+  reverse = false;
+
+  if (pet >= 128) {
+    pet -= 128;
+
+    reverse = true;
+  }
+
+  if (pet >= 1 && pet <= 26)
+    return 'A' + pet - 1;
+
+  if (pet >= 48 && pet <= 57)
+    return '0' + pet - 48;
+
+  // 0-63 normal characters
+  if (pet < 64) {
+    switch (pet) {
+      case 0 : return '@';
+      // A-Z (1-26)
+      case 27: return '[';
+      case 28: return '\\';
+      case 29: return ']';
+      case 30: return '^'; // up arrow
+      case 31: return '~'; // left arrow
+      case 32: return ' ';
+      case 33: return '!';
+      case 34: return '"';
+      case 35: return '#';
+      case 36: return '$';
+      case 37: return '%';
+      case 38: return '&';
+      case 39: return '\'';
+      case 40: return '(';
+      case 41: return ')';
+      case 42: return '*';
+      case 43: return '+';
+      case 44: return ',';
+      case 45: return '-';
+      case 46: return '.';
+      case 47: return '/';
+      // 0-9 (48-57)
+      case 58: return ':';
+      case 59: return ';';
+      case 60: return '<';
+      case 61: return '=';
+      case 62: return '>';
+      case 63: return '?';
+    }
+  }
+
+  // 64-127 : graphic characters
+  switch (pet) {
+    case 64 : utf = 0     ; return 0; // horizontal mid line
+    case 65 : utf = 0x2660; return 0; // spades suit
+    case 66 : utf = 0     ; return 0; // vertical line 1
+    case 67 : utf = 0     ; return 0; // horizontal line 1
+    case 68 : utf = 0     ; return 0; // horizontal line 2
+    case 69 : utf = 0     ; return 0; // horizontal line 3
+    case 70 : utf = 0     ; return 0; // horizontal line 4
+    case 71 : utf = 0     ; return 0; // vertical line 2
+    case 72 : utf = 0     ; return 0; // vertical line 3
+    case 73 : utf = 0x256e; return 0; // round corner ll
+    case 74 : utf = 0x2570; return 0; // round corner ur
+    case 75 : utf = 0x256f; return 0; // round corner ul
+    case 76 : utf = 0     ; return 0; // square corner ll
+    case 77 : utf = 0x2572; return 0; // diagonal tl->br
+    case 78 : utf = 0x2571; return 0; // diagonal bl->tr
+    case 79 : utf = 0     ; return 0; // square corner tl
+    case 80 : utf = 0     ; return 0; // square corner tr
+    case 81 : utf = 0x25cf; return 0; // white filled circle, black square
+    case 82 : utf = 0     ; return 0; // horizontal line 5
+    case 83 : utf = 0x2665; return 0; // hearts suit
+    case 84 : utf = 0     ; return 0; // vertical line 4
+    case 85 : utf = 0x256d; return 0; // round corner lr
+    case 86 : utf = 0x2573; return 0; // cross
+    case 87 : utf = 0x25cb; return 0; // white stroked circle, black square
+    case 88 : utf = 0x2663; return 0; // clubs suit
+    case 89 : utf = 0     ; return 0; // vertical line 5
+    case 90 : utf = 0x2666; return 0; // diamonds suit
+    case 91 : utf = 0x253c; return 0; // plus
+    case 92 : utf = 0     ; return 0; // hash fill left half
+    case 93 : utf = 0x2502; return 0; // vertical line 5
+    case 94 : utf = 0x0360; return 0; // pi
+    case 95 : utf = 0x25e5; return 0; // filled tr triangle
+    case 96 : utf = 0     ; return 0; // space
+    case 97 : utf = 0x258c; return 0; // filled left side
+    case 98 : utf = 0x2584; return 0; // filled bottom side
+    case 99 : utf = 0x2594; return 0; // filled top side
+    case 100: utf = 0x2581; return 0; // horizontal line bottom
+    case 101: utf = 0x258f; return 0; // vertical line left
+    case 102: utf = 0x2592; return 0; // hash fill
+    case 103: utf = 0x2595; return 0; // line top and right
+    case 104: utf = 0     ; return 0; // hash fill bottom half
+    case 105: utf = 0x25e4; return 0; // filled tl triangle
+    case 106: utf = 0     ; return 0; // thick line right
+    case 107: utf = 0x251c; return 0; // vertical line mid and to right
+    case 108: utf = 0x2597; return 0; // filled br quarter
+    case 109: utf = 0x2514; return 0; // stroked tr quarter
+    case 110: utf = 0x2510; return 0; // stroked bl quarter
+    case 111: utf = 0x2582; return 0; // thick line bottom
+    case 112: utf = 0x250c; return 0; // stroked br quarter
+    case 113: utf = 0x2534; return 0; // horizontal line mid and to top
+    case 114: utf = 0x252c; return 0; // horizontal line mid and to bottom
+    case 115: utf = 0x2524; return 0; // vertical line mid and to left
+    case 116: utf = 0x258e; return 0; // thick line left
+    case 117: utf = 0x258d; return 0; // double thick line left
+    case 118: utf = 0     ; return 0; // double thick line right
+    case 119: utf = 0     ; return 0; // double thick line top
+    case 120: utf = 0     ; return 0; // triple thick line top
+    case 121: utf = 0x2583; return 0; // quadruple thick line bottom
+    case 122: utf = 0     ; return 0; // stroked br quarter
+    case 123: utf = 0x2596; return 0; // filled bl quarter
+    case 124: utf = 0x259d; return 0; // filled tr quarter
+    case 125: utf = 0x2518; return 0; // stroked tl quarter
+    case 126: utf = 0x2598; return 0; // filled tl quarter
+    case 127: utf = 0x259a; return 0; // filled tl and br quarter
+  }
+
+  return ' '; // TODO
 }

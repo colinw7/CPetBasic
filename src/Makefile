@@ -1,4 +1,5 @@
 CC = g++
+AR = ar
 RM = rm
 
 CDEBUG = -g
@@ -7,13 +8,13 @@ LDEBUG = -g
 INC_DIR = ../include
 OBJ_DIR = ../obj
 LIB_DIR = ../lib
-BIN_DIR = ../bin
 
-all: $(BIN_DIR)/CPetBasic
+all: dirs $(LIB_DIR)/libCPetBasic.a
 
-clean:
-	$(RM) -f $(OBJ_DIR)/*.o
-	$(RM) -f $(BIN_DIR)/CPetBasic
+dirs:
+	@if [ ! -e ../obj ]; then mkdir ../obj; fi
+	@if [ ! -e ../lib ]; then mkdir ../lib; fi
+	@if [ ! -e ../bin ]; then mkdir ../bin; fi
 
 SRC = \
 CPetBasic.cpp \
@@ -41,6 +42,8 @@ CPPFLAGS = \
 -DPET_EXPR \
 -std=c++17 \
 -I./Expr \
+-I../include/Expr \
+-I../include \
 -I../../CReadLine/include \
 -I../../CFile/include \
 -I../../CMath/include \
@@ -49,29 +52,14 @@ CPPFLAGS = \
 -I../../COS/include \
 -I.
 
-LFLAGS = \
-$(LDEBUG) \
--L$(LIB_DIR) \
--L../../CFile/lib \
--L../../CReadLine/lib \
--L../../CMath/lib \
--L../../CStrUtil/lib \
--L../../CGlob/lib \
--L../../CUtil/lib \
--L../../COS/lib \
--lCFile \
--lCReadLine \
--lCMath \
--lCStrUtil \
--lCUtil \
--lCOS \
--lreadline \
--lcurses
-
-.SUFFIXES: .cpp
+clean:
+	$(RM) -f $(OBJ_DIR)/*.o
+	$(RM) -f $(LIB_DIR)/libCPetBasic.a
 
 $(OBJS): $(OBJ_DIR)/%.o: %.cpp
 	$(CC) -c $< -o $(OBJ_DIR)/$*.o $(CPPFLAGS)
 
-$(BIN_DIR)/CPetBasic: $(OBJS)
-	$(CC) -o $(BIN_DIR)/CPetBasic $(OBJS) $(LFLAGS)
+.SUFFIXES: .cpp
+
+$(LIB_DIR)/libCPetBasic.a: $(OBJS)
+	$(AR) crv $(LIB_DIR)/libCPetBasic.a $(OBJS)

@@ -822,11 +822,7 @@ compilePostfixExpression(CExprITokenPtr itoken)
 
     auto itoken00 = itoken->getChild(0);
 
-    std::string identifier = itoken00->getIdentifier();
-
-#ifdef PET_EXPR
-    for (auto &c : identifier) c = char(toupper(c));
-#endif
+    auto identifier = itoken00->getIdentifier();
 
     CExprFunctionMgr::Functions functions;
 

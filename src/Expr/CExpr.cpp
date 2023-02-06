@@ -193,49 +193,49 @@ CExprVariablePtr
 CExpr::
 getVariable(const std::string &name) const
 {
-  return variableMgr_->getVariable(name);
+  return variableMgr_->getVariable(adjustIdentifier(name));
 }
 
 CExprVariablePtr
 CExpr::
 createVariable(const std::string &name, CExprValuePtr value)
 {
-  return variableMgr_->createVariable(name, value);
+  return variableMgr_->createVariable(adjustIdentifier(name), value);
 }
 
 CExprVariablePtr
 CExpr::
 createRealVariable(const std::string &name, double x)
 {
-  return variableMgr_->createVariable(name, createRealValue(x));
+  return createVariable(name, createRealValue(x));
 }
 
 CExprVariablePtr
 CExpr::
 createIntegerVariable(const std::string &name, long l)
 {
-  return variableMgr_->createVariable(name, createIntegerValue(l));
+  return createVariable(name, createIntegerValue(l));
 }
 
 CExprVariablePtr
 CExpr::
 createStringVariable(const std::string &name, const std::string &str)
 {
-  return variableMgr_->createVariable(name, createStringValue(str));
+  return createVariable(name, createStringValue(str));
 }
 
 CExprVariablePtr
 CExpr::
 createUserVariable(const std::string &name, CExprVariableObj *obj)
 {
-  return variableMgr_->createUserVariable(name, obj);
+  return variableMgr_->createUserVariable(adjustIdentifier(name), obj);
 }
 
 void
 CExpr::
 removeVariable(const std::string &name)
 {
-  variableMgr_->removeVariable(variableMgr_->getVariable(name));
+  variableMgr_->removeVariable(variableMgr_->getVariable(adjustIdentifier(name)));
 }
 
 void
@@ -249,35 +249,35 @@ CExprFunctionPtr
 CExpr::
 getFunction(const std::string &name)
 {
-  return functionMgr_->getFunction(name);
+  return functionMgr_->getFunction(adjustIdentifier(name));
 }
 
 void
 CExpr::
 getFunctions(const std::string &name, Functions &functions)
 {
-  functionMgr_->getFunctions(name, functions);
+  functionMgr_->getFunctions(adjustIdentifier(name), functions);
 }
 
 CExprFunctionPtr
 CExpr::
 addFunction(const std::string &name, const std::vector<std::string> &args, const std::string &proc)
 {
-  return functionMgr_->addUserFunction(name, args, proc);
+  return functionMgr_->addUserFunction(adjustIdentifier(name), args, proc);
 }
 
 CExprFunctionPtr
 CExpr::
 addFunction(const std::string &name, const std::string &argsStr, CExprFunctionObj *func)
 {
-  return functionMgr_->addObjFunction(name, argsStr, func);
+  return functionMgr_->addObjFunction(adjustIdentifier(name), argsStr, func);
 }
 
 void
 CExpr::
 removeFunction(const std::string &name)
 {
-  functionMgr_->removeFunction(name);
+  functionMgr_->removeFunction(adjustIdentifier(name));
 }
 
 void
@@ -439,3 +439,10 @@ nameType(const std::string &name)
   else                      return CExprValueType::REAL;
 }
 #endif
+
+std::string
+CExpr::
+adjustIdentifier(const std::string &name) const
+{
+  return (isIgnoreCase() ? CStrUtil::toUpper(name) : name);
+}

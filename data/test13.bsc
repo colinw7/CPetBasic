@@ -1,0 +1,3 @@
+100 R$="Hello World"
+110 M$="Hello World"
+120 print LEFT$(R$,12-(LEN(M$))/2)

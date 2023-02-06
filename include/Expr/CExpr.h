@@ -71,6 +71,9 @@ class CExpr {
 
   virtual ~CExpr();
 
+  //---
+
+  // options
   bool getQuiet() const { return quiet_; }
   void setQuiet(bool b) { quiet_ = b; }
 
@@ -82,6 +85,11 @@ class CExpr {
 
   bool getDegrees() const { return degrees_; }
   void setDegrees(bool b) { degrees_ = b; }
+
+  bool isIgnoreCase() const { return ignoreCase_; }
+  void setIgnoreCase(bool b) { ignoreCase_ = b; }
+
+  //---
 
   bool evaluateExpression(const std::string &str, CExprValueArray &values);
   bool evaluateExpression(const std::string &str, CExprValuePtr &value);
@@ -135,6 +143,8 @@ class CExpr {
   CExprValuePtr createRealValue   (double r);
   CExprValuePtr createStringValue (const std::string &s);
 
+  std::string adjustIdentifier(const std::string &name) const;
+
   std::string printf(const std::string &fmt, const CExprValueArray &values) const;
 
   void errorMsg(const std::string &msg) const;
@@ -159,10 +169,12 @@ class CExpr {
   using CExprVariableMgrP = std::unique_ptr<CExprVariableMgr>;
   using CExprFunctionMgrP = std::unique_ptr<CExprFunctionMgr>;
 
-  bool              quiet_   { false };
-  bool              debug_   { false };
-  bool              trace_   { false };
-  bool              degrees_ { false };
+  bool quiet_      { false };
+  bool debug_      { false };
+  bool trace_      { false };
+  bool degrees_    { false };
+  bool ignoreCase_ { false };
+
   CExprParseP       parse_;
   CExprInterpP      interp_;
   CExprCompileP     compile_;
