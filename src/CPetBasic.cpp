@@ -669,6 +669,10 @@ loadFile(const std::string &fileName)
     processLineData(lineData);
   }
 
+  runDataValid_ = false;
+
+  notifyLinesChanged();
+
   return true;
 }
 
@@ -756,6 +760,7 @@ CPetBasic::
 parseLine(const std::string &line, uint lineNum, Tokens &tokens) const
 {
   std::string tokenStr;
+  bool        embedded { false };
 
   CStrParse parse(line);
 
@@ -779,7 +784,7 @@ parseLine(const std::string &line, uint lineNum, Tokens &tokens) const
       else if (type == TokenType::SEPARATOR)
         token = createSeparator(tokenStr);
       else if (type == TokenType::STRING)
-        token = createString(tokenStr);
+        token = createString(tokenStr, embedded);
       else if (type == TokenType::NUMBER)
         token = createNumber(tokenStr);
       else {
@@ -794,6 +799,7 @@ parseLine(const std::string &line, uint lineNum, Tokens &tokens) const
       keywordStr  = "";
 
       tokenStr = "";
+      embedded = false;
     }
   };
 
@@ -871,27 +877,34 @@ parseLine(const std::string &line, uint lineNum, Tokens &tokens) const
           else
             tokenStr += "/";
         }
-        else if (parse.isChar('[')) {
+        else if (parse.isChar('{')) {
           parse.skipChar();
 
           std::string str1;
 
           while (! parse.eof()) {
-            if (parse.isChar(']'))
+            if      (parse.isChar('{'))
+              std::cerr << "Mismatched {\n";
+            else if (parse.isChar('}'))
               break;
 
             str1 += parse.readChar();
           }
 
-          if (parse.isChar(']'))
+          if (parse.isChar('}'))
             parse.skipChar();
 
           std::string str2;
 
-          if (isReplaceEmbedded() && replaceEmbedded(str1, str2))
+          if (isReplaceEmbedded() && replaceEmbedded(str1, str2)) {
+            embedded = true;
             tokenStr += str2;
+          }
           else
-            tokenStr += "[" + str1 + "]";
+            tokenStr += "{" + str1 + "}";
+        }
+        else if (parse.isChar('}')) {
+          std::cerr << "Mismatched }\n";
         }
         else {
           if (parse.isChar('"')) {
@@ -986,33 +999,28 @@ parseLine(const std::string &line, uint lineNum, Tokens &tokens) const
   return true;
 }
 
+// replace contents of {<str>} embedded char
 bool
 CPetBasic::
 replaceEmbedded(const std::string &str1, std::string &str2) const
 {
+  auto len1 = str1.size();
+
   str2 = "";
 
-  auto parseNumeric = [&](const std::string &name, const std::string &value, long &n) {
+  auto parseNumeric = [&](const std::string &name, long &n) {
     auto len = name.size();
 
     if      (str1 == name) {
       n = 1;
 
-      if (value != "")
-        str2 += value;
-
       return true;
     }
-    else if (str1.size() > len && str1.substr(str1.size() - len, len) == name) {
+    else if (len1 > len && str1.substr(len1 - len, len) == name) {
       CStrParse parse(str1);
 
       if (! parse.readInteger(&n) && n > 0)
         return false;
-
-      if (value != "") {
-        for (long i = 0; i < n; ++i)
-          str2 += value;
-      }
 
       return true;
     }
@@ -1020,108 +1028,257 @@ replaceEmbedded(const std::string &str1, std::string &str2) const
       return false;
   };
 
+  auto parseShift = [&](long &n, std::string &rhs) {
+    n = 1;
+
+    uint pos1 = 0;
+
+    if (isdigit(str1[pos1])) {
+      ++pos1;
+
+      while (pos1 < len1 && isdigit(str1[pos1]))
+        ++pos1;
+
+      n = std::stol(str1.substr(0, pos1));
+    }
+
+    if (pos1 >= len1 && str1[pos1] != '^')
+      return false;
+
+    ++pos1;
+
+    rhs = str1.substr(pos1);
+
+    return true;
+  };
+
   auto appendN = [](std::string &str, long n, auto c) {
     for (long i = 0; i < n; ++i)
       str += c;
   };
 
-  long n;
+  //---
+
+  long        n;
+  std::string sstr;
 
   // SHIFT +128
   // INVERSE +64
 
+  bool rc = true;
+
   if      (str1 == "HOM") { // 19 (octal 23)
-    if (isEmbeddedEscapes())
-      str2 += "[0,0H";
-    else
-      str2 += '\023';
-    return true;
+    str2 += encodeEmbedded("HOM");
   }
   else if (str1 == "CLS") { // 147 (octal 223)
-    if (isEmbeddedEscapes())
-      str2 += "[2]";
-    else
-      str2 += '\223';
-    return true;
+    str2 += encodeEmbedded("CLS");
   }
   else if (str1 == "STP") { // 3 (octal 3)
-    assert(false); // TODO
-    return false;
+    str2 += encodeEmbedded("STP");
   }
   else if (str1 == "PI") { // 255 (octal 377)
-    assert(false); // TODO
-    return false;
+    str2 += encodeEmbedded("PI");
   }
   else if (str1 == "INS") { // 148 (octal 224)
-    assert(false); // TODO
-    return false;
+    str2 += encodeEmbedded("INS");
   }
   else if (str1 == "REV") { // 18 (octal 22)
-    if (isEmbeddedEscapes())
-      str2 += "[7m";
-    else
-      str2 += '\022';
-    return true;
+    str2 += encodeEmbedded("REV");
   }
   else if (str1 == "OFF") { // 146 (octal 222)
-    if (isEmbeddedEscapes())
-      str2 += "[0m";
-    else
-      str2 += '\222';
-    return true;
+    str2 += encodeEmbedded("OFF");
   }
-  else if (parseNumeric("CU", "", n)) {  // 145 (octal 221)
-    if (isEmbeddedEscapes())
-      str2 += "[" + std::to_string(n) + "A";
-    else
-      appendN(str2, n, uchar(145));
-    return true;
+  else if (parseNumeric("CU", n)) {  // 145 (octal 221)
+    appendN(str2, n, encodeEmbedded("CU"));
   }
-  else if (parseNumeric("CD", "", n)) { // 17 (octal 21)
-    if (isEmbeddedEscapes())
-      str2 += "[" + std::to_string(n) + "B";
-    else
-      appendN(str2, n, uchar(17));
-    return true;
+  else if (parseNumeric("CD", n)) { // 17 (octal 21)
+    appendN(str2, n, encodeEmbedded("CD"));
   }
-  else if (parseNumeric("CL", "", n)) { // 157 (octal 235)
-    if (isEmbeddedEscapes())
-      str2 += "[" + std::to_string(n) + "D";
-    else
-      appendN(str2, n, uchar(157));
-    return true;
+  else if (parseNumeric("CL", n)) { // 157 (octal 235)
+    appendN(str2, n, encodeEmbedded("CL"));
   }
-  else if (parseNumeric("CR", "", n)) { // 29 (octal 35)
-    if (isEmbeddedEscapes())
-      str2 += "[" + std::to_string(n) + "C";
-    else
-      appendN(str2, n, uchar(29));
-    return true;
+  else if (parseNumeric("CR", n)) { // 29 (octal 35)
+    appendN(str2, n, encodeEmbedded("CR"));
   }
-  else if (parseNumeric("SPC", " ", n)) { // 32 (octal 40)
-    return true;
+  else if (parseNumeric("SPC", n)) { // 32 (octal 40)
+    appendN(str2, n, ' ');
   }
-  else if (parseNumeric("^SPC", "", n)) { // 160 (octal 240)
-    char c;
-    if (isEmbeddedEscapes())
-      c = ' '; // TODO
-    else
-      c = '\240';
-    appendN(str2, n, c);
-    return true;
+  else if (parseNumeric("^SPC", n)) { // 160 (octal 240)
+    appendN(str2, n, encodeEmbedded("^SPC"));
   }
-  else if (parseNumeric("^V", "", n)) { // 214 (octal 326)
+  else if (parseNumeric("^DQT", n)) {
+    appendN(str2, n, encodeEmbedded("\""));
+  }
+  else if (parseNumeric("^BSH", n)) {
+    appendN(str2, n, encodeEmbedded("\\"));
+  }
+  else if (parseNumeric("^DEL", n)) {
+    appendN(str2, n, encodeEmbedded("~"));
+  }
+  else if (parseShift(n, sstr)) { // ^<char> (shifted character)
     std::string c;
     if (isEmbeddedEscapes())
-      c = "\u2715";
+      appendN(str2, n, sstr[0]);
     else
-      c = '\326';
-    appendN(str2, n, c);
-    return true;
+      appendN(str2, n, encodeEmbedded(sstr));
+  }
+  else {
+    std::cerr << "Invalid embedded code '" << str1 << "'\n";
+    rc = false;
   }
 
-  return false;
+  return rc;
 }
+
+std::string
+CPetBasic::
+encodeEmbedded(const std::string &name) const
+{
+  if (isEmbeddedEscapes()) {
+    if      (name == "HOM"   ) return "\033[0,0H";
+    else if (name == "CLS"   ) return "\033[2]";
+    else if (name == "STP"   ) return ""; // TODO
+    else if (name == "PI"    ) return "π";
+    else if (name == "INS"   ) return ""; // TODO
+    else if (name == "REV"   ) return "\033[7m";
+    else if (name == "OFF"   ) return "\033[0m";
+    else if (name == "CU"    ) return "\033[A";
+    else if (name == "CD"    ) return "\033[B";
+    else if (name == "CL"    ) return "\033[D";
+    else if (name == "CR"    ) return "\033[C";
+    else if (name == "^SPC"  ) return " ";
+    else if (name.size() == 1) return name;
+  }
+  else {
+    uchar c { 0 };
+
+    if      (name == "HOM"   ) c = '\001';
+    else if (name == "CLS"   ) c = '\002';
+    else if (name == "STP"   ) c = '\003';
+    else if (name == "PI"    ) c = '\004';
+    else if (name == "INS"   ) c = '\005';
+    else if (name == "REV"   ) c = '\006';
+    else if (name == "OFF"   ) c = '\007';
+    else if (name == "CU"    ) c = '\020';
+    else if (name == "CD"    ) c = '\021';
+    else if (name == "CL"    ) c = '\022';
+    else if (name == "CR"    ) c = '\023';
+    else if (name == "^SPC"  ) c = '\024';
+    else if (name.size() == 1) c = 128 + (uchar(name[0]) & 0x7f);
+    std::string s = " ";
+    s[0] = c;
+    return s;
+  }
+  std::cerr << "Invalid embedded code '" << name << "'\n";
+  return "";
+}
+
+uchar
+CPetBasic::
+decodeEmbedded(uchar c)
+{
+  if (c < 128) {
+    switch (c) {
+      case '\001': return 23;
+      case '\002': return 147;
+      case '\003': return 3;
+      case '\004': return 255;
+      case '\005': return 148;
+      case '\006': return 18;
+      case '\007': return 146;
+      case '\020': return 145;
+      case '\021': return 17;
+      case '\022': return 157;
+      case '\023': return 29;
+      case '\024': return 160;
+      default:
+        std::cerr << "Invalid embedded char '" << int(c) << "'\n";
+        break;
+    }
+
+    return 0;
+  }
+  else {
+    uchar c1 = c - 128;
+
+    auto pet = asciiToPet(c1, 0, /*reverse*/false);
+
+    pet += 64;
+
+    return pet;
+  }
+}
+
+std::string
+CPetBasic::
+decodeEmbeddedStr(const std::string &s)
+{
+  std::string s1;
+
+  for (const auto &c : s) {
+    auto c1 = uchar(c);
+
+    if (c1 < 8 || (c1 >= 16 && c1 < 20) || c1 >= 128) {
+      s1 += decodeEmbeddedChar(c1);
+    }
+    else
+     s1 += c;
+  }
+
+  return s1;
+}
+
+std::string
+CPetBasic::
+decodeEmbeddedChar(uchar c)
+{
+  if (c < 128) {
+    switch (c) {
+      case '\001': return "{HOME}";
+      case '\002': return "{CLS}";
+      case '\003': return "{STP}";
+      case '\004': return "{PI}";
+      case '\005': return "{INS}";
+      case '\006': return "{REV}";
+      case '\007': return "{OFF}";
+      case '\020': return "{CU}";
+      case '\021': return "{CD}";
+      case '\022': return "{CL}";
+      case '\023': return "{CR}";
+      case '\024': return "{^SPC}";
+      default:
+        std::cerr << "Invalid embedded char '" << int(c) << "'\n";
+        break;
+    }
+
+    return "";
+  }
+  else {
+    char c1 = char(c - 128);
+
+    return "{^" + std::string(&c1, 1) + "}";
+  }
+}
+
+//---
+
+uint
+CPetBasic::
+numLines() const
+{
+  return uint(lines_.size());
+}
+
+uint
+CPetBasic::
+maxLine() const
+{
+  auto pl = lines_.rbegin();
+
+  return (pl != lines_.rend() ? (*pl).second.lineN : 0);
+}
+
+//---
 
 CPetBasic::KeywordType
 CPetBasic::
@@ -1227,114 +1384,186 @@ void
 CPetBasic::
 listLine(const LineData &lineData) const
 {
-  static std::string sepCharsL = ",;:()=+-";
-  static std::string sepCharsR = ",;:()=+-";
+  if (lineData.lineN > 0)
+    std::cout << lineData.lineN << " ";
 
+  auto str = lineToString(lineData, isListHighlight());
+
+  std::cout << str << "\n";
+}
+
+std::string
+CPetBasic::
+lineToString(const LineData &lineData, bool highlight) const
+{
   int ns = int(std::log10(lineData.lineN) + 1);
 
-  int is = 0;
+  std::string str;
+
+  uint is = 0;
 
   for (const auto &statement : lineData.statements) {
-    char lastChar = '\0';
+    char lastChar = ' ';
 
-    if (is == 0)
-      std::cout << lineData.lineN << " ";
-    else {
+    if (is > 0) {
       if (isSplitStatements()) {
-        std::cout << "\n";
+        str += "\n";
 
         for (int i = 0; i < ns; ++i)
-          std::cout << " ";
+          str += " ";
       }
       else {
-        std::cout << ":";
+        str += ":";
 
         lastChar = ':';
       }
     }
 
-    for (auto *token : statement.tokens) {
-      std::stringstream ss;
+    //---
 
-      if (isListHighlight())
-        token->printEsc(ss);
-      else
-        token->print(ss);
-
-      auto s = ss.str();
-
-      auto firstChar = s[0];
-
-      bool needsSpace = true;
-
-      if (sepCharsL.find(firstChar) != std::string::npos)
-        needsSpace = false;
-
-      if (sepCharsR.find(lastChar) != std::string::npos)
-        needsSpace = false;
-
-      if (needsSpace)
-        std::cout << " ";
-
-      std::cout << s;
-
-      lastChar = s[s.size() - 1];
-    }
+    str += statementToString(statement, lastChar, highlight);
 
     ++is;
   }
 
-  std::cout << "\n";
+  return str;
+}
+
+std::string
+CPetBasic::
+statementToString(const Statement &statement, char lastChar, bool highlight) const
+{
+  static std::string sepCharsL = ",;:()=+-";
+  static std::string sepCharsR = ",;:()=+-";
+
+  char lastChar1 = lastChar;
+
+  std::string str;
+
+  for (auto *token : statement.tokens) {
+    std::string s;
+
+    if (token->type() == TokenType::STRING) {
+      auto *strToken = static_cast<StringToken *>(token);
+
+      if (strToken->isEmbedded()) {
+        auto estr = decodeEmbeddedStr(strToken->toString());
+
+        if (highlight)
+          s = "\033[35m\"" + estr + "\"\033[0m";
+        else
+          s = "\"" + estr + "\"";
+      }
+    }
+
+    if (s.empty()) {
+      std::stringstream ss;
+
+      if (highlight)
+        token->printEsc(ss);
+      else
+        token->print(ss);
+
+      s = ss.str();
+    }
+
+    auto firstChar = s[0];
+
+    bool needsSpace = true;
+
+    if (sepCharsL.find(firstChar) != std::string::npos)
+      needsSpace = false;
+
+    if (sepCharsR.find(lastChar1) != std::string::npos)
+      needsSpace = false;
+
+    if (needsSpace)
+      str += " ";
+
+    str += s;
+
+    lastChar1 = s[s.size() - 1];
+  }
+
+  return str;
 }
 
 bool
 CPetBasic::
 run()
 {
-  if (lines_.empty())
-    return true;
+  initRunData();
 
-  initRunState();
-
-  //---
-
-  initRun();
+  setLineInd(0);
 
   return contRun();
 }
 
+bool
+CPetBasic::
+step()
+{
+  initRunData();
+
+  stopped_ = true;
+
+  auto rc = contRun();
+
+  stopped_ = false;
+
+  return rc;
+}
+
 void
 CPetBasic::
-initRun()
+initRunData()
 {
-  // build lines vector
-  lineNums_.clear();
-  lineInds_.clear();
+  if (! runDataValid_) {
+    initRunState();
 
-  int lineInd = 0;
+    //---
 
-  for (const auto &pl : lines_) {
-    auto lineNum = pl.first;
+    // build lines vector
+    lineNums_.clear();
+    lineInds_.clear();
 
-    lineNums_.push_back(lineNum);
+    int lineInd = 0;
 
-    lineInds_[lineNum] = uint(lineInd);
+    for (const auto &pl : lines_) {
+      auto lineNum = pl.first;
 
-    ++lineInd;
+      lineNums_.push_back(lineNum);
+
+      lineInds_[lineNum] = uint(lineInd);
+
+      ++lineInd;
+    }
+
+    //---
+
+    setLineInd(0);
+
+    runDataValid_ = true;
   }
+}
 
-  //---
+int
+CPetBasic::
+currentLineNum() const
+{
+  if (lineInd_ < 0 || uint(lineInd_) >= lineNums_.size())
+    return -1;
 
-  lineInd_ = 0;
+  return lineNums_[lineInd_];
 }
 
 bool
 CPetBasic::
 contRun()
 {
-  while (lineInd_ >= 0 && uint(lineInd_) < lineNums_.size()) {
-    auto lineNum = lineNums_[lineInd_];
+  auto lineNum = currentLineNum();
 
+  while (lineNum > 0) {
     auto pl = lines_.find(lineNum);
     assert(pl != lines_.end());
 
@@ -1348,6 +1577,8 @@ contRun()
 
     if (isStopped())
       break;
+
+    lineNum = currentLineNum();
   }
 
   setStopped(false);
@@ -1407,8 +1638,13 @@ inputLine(const std::string &lineBuffer)
   if (parseLine(0, lineBuffer, lineData)) {
     processLineData(lineData);
 
-    if (lineData.lineN > 0)
+    if (lineData.lineN > 0) {
       lines_[lineData.lineN] = lineData;
+
+      runDataValid_ = false;
+
+      notifyLinesChanged();
+    }
     else {
       if (! runLine(lineData)) {
         if (errorMsg_ != "")
@@ -1449,7 +1685,7 @@ runLine(const LineData &lineData)
   }
 
   if (nextLine)
-    ++lineInd_;
+    setLineInd(lineInd_ + 1);
 
   return true;
 }
@@ -1961,7 +2197,8 @@ ifStatement(int lineN, TokenList &tokenList, bool &nextLine)
 
   if (! i) {
     nextLine = false;
-    ++lineInd_;
+    setLineInd(lineInd_ + 1);
+
     return true;
   }
 
@@ -1986,7 +2223,7 @@ ifStatement(int lineN, TokenList &tokenList, bool &nextLine)
       auto lineInd = getLineInd(lineNum);
       if (lineInd < 0) return errorMsg("Invalid IF THEN line");
 
-      lineInd_ = lineInd;
+      setLineInd(lineInd);
       nextLine = false;
 
       return true;
@@ -2138,7 +2375,7 @@ gosubStatement(TokenList &tokenList)
 
   lineStack_.push_back(lineInd_);
 
-  lineInd_ = lineInd;
+  setLineInd(lineInd);
 
   return true;
 }
@@ -2159,7 +2396,7 @@ gotoStatement(TokenList &tokenList)
   auto lineInd = getLineInd(lineNum);
   if (lineInd < 0) return errorMsg("Invalid GOTO line");
 
-  lineInd_ = lineInd;
+  setLineInd(lineInd);
 
   return true;
 }
@@ -2266,7 +2503,7 @@ newStatement(TokenList &tokenList)
 
   lines_.clear();
 
-  lineInd_ = -1;
+  setLineInd(-1);
 
   expr_ = std::make_unique<CPetBasicExpr>(this);
 
@@ -2274,6 +2511,10 @@ newStatement(TokenList &tokenList)
   dataValues_.clear();
 
   dataValuePos_ = 0;
+
+  runDataValid_ = false;
+
+  notifyLinesChanged();
 
   return true;
 }
@@ -2325,12 +2566,12 @@ nextStatement(TokenList &tokenList)
       auto lineInd = getLineInd(forData.lineNum_);
       if (lineInd < 0) return errorMsg("Invalid GOTO line");
 
-      lineInd_ = lineInd + 1;
+      setLineInd(lineInd + 1);
     }
     else { // at end
       forDatas_.erase(varToken->str());
 
-      ++lineInd_;
+      setLineInd(lineInd_ + 1);
     }
   }
 
@@ -2396,7 +2637,7 @@ onStatement(TokenList &tokenList)
   if (gosubFlag)
     lineStack_.push_back(lineInd_);
 
-  lineInd_ = lineInd;
+  setLineInd(lineInd);
 
   return true;
 }
@@ -2612,8 +2853,10 @@ returnStatement(TokenList &tokenList)
   if (lineStack_.empty())
     return errorMsg("Empty line stack");
 
-  lineInd_ = lineStack_.back();
+  auto lineInd = lineStack_.back();
   lineStack_.pop_back();
+
+  setLineInd(lineInd);
 
   return true;
 }
@@ -2768,7 +3011,18 @@ initRunState()
 
   errorMsg_ = "";
 
-  lineInd_ = -1;
+  setLineInd(-1);
+}
+
+void
+CPetBasic::
+setLineInd(int ind)
+{
+  if (ind != lineInd_) {
+    lineInd_ = ind;
+
+    notifyLineNumChanged();
+  }
 }
 
 //---
@@ -2820,6 +3074,7 @@ CPetBasic::
 evalExpr(const Tokens &tokens) const
 {
   std::string str;
+  bool        embedded = false;
 
   auto nt = tokens.size();
 
@@ -2829,8 +3084,12 @@ evalExpr(const Tokens &tokens) const
 
     auto *token = tokens[i];
 
-    if      (token->type() == TokenType::STRING)
+    if      (token->type() == TokenType::STRING) {
+      auto *strToken = static_cast<StringToken *>(token);
+      if (strToken->isEmbedded()) embedded = true;
+
       str += "\"" + token->toString() + "\"";
+    }
     else if (token->type() == TokenType::NUMBER)
       str += token->toString();
     else if (token->type() == TokenType::VARIABLE)
@@ -2838,6 +3097,9 @@ evalExpr(const Tokens &tokens) const
     else
       str += token->exprString();
   }
+
+  if (embedded && nt > 1)
+    std::cerr << "Expression with embedded '" << str << "'\n";
 
   return evalExpr(str);
 }
@@ -3067,71 +3329,71 @@ asciiToPet(uchar ascii, ulong utf, bool reverse)
   if (utf > 0) {
     auto utfToPet1 = [](ulong utf1) -> uchar {
       switch (utf1) {
-//      case 0     : return 64 ; // horizontal mid line
-        case 0x2660: return 65 ; // spades suit
-//      case 0     : return 66 ; // vertical line 1
-//      case 0     : return 67 ; // horizontal line 1
-//      case 0     : return 68 ; // horizontal line 2
-//      case 0     : return 69 ; // horizontal line 3
-//      case 0     : return 70 ; // horizontal line 4
-//      case 0     : return 71 ; // vertical line 2
-//      case 0     : return 72 ; // vertical line 3
-        case 0x256e: return 73 ; // round corner ll
-        case 0x2570: return 74 ; // round corner ur
-        case 0x256f: return 75 ; // round corner ul
-//      case 0     : return 76 ; // square corner ll
-        case 0x2572: return 77 ; // diagonal tl->br
-        case 0x2571: return 78 ; // diagonal bl->tr
-//      case 0     : return 79 ; // square corner tl
-//      case 0     : return 80 ; // square corner tr
-        case 0x25cf: return 81 ; // white filled circle, black square
-//      case 0     : return 82 ; // horizontal line 5
-        case 0x2665: return 83 ; // hearts suit
-//      case 0     : return 84 ; // vertical line 4
-        case 0x256d: return 85 ; // round corner lr
-        case 0x2573: return 86 ; // cross
-        case 0x25cb: return 87 ; // white stroked circle, black square
-        case 0x2663: return 88 ; // clubs suit
-//      case 0     : return 89 ; // vertical line 5
-        case 0x2666: return 90 ; // diamonds suit
-        case 0x253c: return 91 ; // plus
-//      case 0     : return 92 ; // hash fill left half
-        case 0x2502: return 93 ; // vertical line 5
-        case 0x0360: return 94 ; // pi
-        case 0x25e5: return 95 ; // filled tr triangle
-//      case 0     : return 96 ; // space
-        case 0x258c: return 97 ; // filled left side
-        case 0x2584: return 98 ; // filled bottom side
-        case 0x2594: return 99 ; // filled top side
-        case 0x2581: return 100; // horizontal line bottom
-        case 0x258f: return 101; // vertical line left
-        case 0x2592: return 102; // hash fill
-        case 0x2595: return 103; // line top and right
-//      case 0     : return 104; // hash fill bottom half
-        case 0x25e4: return 105; // filled tl triangle
-//      case 0     : return 106; // thick line right
-        case 0x251c: return 107; // vertical line mid and to right
-        case 0x2597: return 108; // filled br quarter
-        case 0x2514: return 109; // stroked tr quarter
-        case 0x2510: return 110; // stroked bl quarter
-        case 0x2582: return 111; // thick line bottom
-        case 0x250c: return 112; // stroked br quarter
-        case 0x2534: return 113; // horizontal line mid and to top
-        case 0x252c: return 114; // horizontal line mid and to bottom
-        case 0x2524: return 115; // vertical line mid and to left
-        case 0x258e: return 116; // thick line left
-        case 0x258d: return 117; // double thick line left
-//      case 0     : return 118; // double thick line right
-//      case 0     : return 119; // double thick line top
-//      case 0     : return 120; // triple thick line top
-        case 0x2583: return 121; // quadruple thick line bottom
-//      case 0     : return 122; // stroked br quarter
-        case 0x2596: return 123; // filled bl quarter
-        case 0x259d: return 124; // filled tr quarter
-        case 0x2518: return 125; // stroked tl quarter
-        case 0x2598: return 126; // filled tl quarter
-        case 0x259a: return 127; // filled tl and br quarter
-        default    : return 32;
+        case 0x1fb79: return 64 ; // horizontal mid line
+        case 0x2660 : return 65 ; // spades suit
+        case 0x1fb72: return 66 ; // vertical line 1
+        case 0x1fb78: return 67 ; // horizontal line 1
+        case 0x1fb77: return 68 ; // horizontal line 2
+        case 0x1fb76: return 69 ; // horizontal line 3
+        case 0x1fb7a: return 70 ; // horizontal line 4
+        case 0x1fb71: return 71 ; // vertical line 2
+        case 0x1fb74: return 72 ; // vertical line 3
+        case 0x256e : return 73 ; // round corner ll
+        case 0x2570 : return 74 ; // round corner ur
+        case 0x256f : return 75 ; // round corner ul
+        case 0x1fb7c: return 76 ; // square corner ll
+        case 0x2572 : return 77 ; // diagonal tl->br
+        case 0x2571 : return 78 ; // diagonal bl->tr
+        case 0x1fb7d: return 79 ; // square corner tl
+        case 0x1fb7e: return 80 ; // square corner tr
+        case 0x25cf : return 81 ; // white filled circle, black square
+        case 0x1fb7b: return 82 ; // horizontal line 5
+        case 0x2665 : return 83 ; // hearts suit
+        case 0x1fb70: return 84 ; // vertical line 4
+        case 0x256d : return 85 ; // round corner lr
+        case 0x2573 : return 86 ; // cross
+        case 0x25cb : return 87 ; // white stroked circle, black square
+        case 0x2663 : return 88 ; // clubs suit
+        case 0x1fb75: return 89 ; // vertical line 5
+        case 0x2666 : return 90 ; // diamonds suit
+        case 0x253c : return 91 ; // plus
+        case 0x1fb8c: return 92 ; // hash fill left half
+        case 0x2502 : return 93 ; // vertical line 5
+        case 0x0360 : return 94 ; // pi
+        case 0x25e5 : return 95 ; // filled tr triangle
+        case 0x00a0 : return 96 ; // space
+        case 0x258c : return 97 ; // filled left side
+        case 0x2584 : return 98 ; // filled bottom side
+        case 0x2594 : return 99 ; // filled top side
+        case 0x2581 : return 100; // horizontal line bottom
+        case 0x258f : return 101; // vertical line left
+        case 0x2592 : return 102; // hash fill
+        case 0x2595 : return 103; // line top and right
+        case 0x1fb8f: return 104; // hash fill bottom half
+        case 0x25e4 : return 105; // filled tl triangle
+        case 0x1fb87: return 106; // thick line right
+        case 0x251c : return 107; // vertical line mid and to right
+        case 0x2597 : return 108; // filled br quarter
+        case 0x2514 : return 109; // stroked tr quarter
+        case 0x2510 : return 110; // stroked bl quarter
+        case 0x2582 : return 111; // thick line bottom
+        case 0x250c : return 112; // stroked br quarter
+        case 0x2534 : return 113; // horizontal line mid and to top
+        case 0x252c : return 114; // horizontal line mid and to bottom
+        case 0x2524 : return 115; // vertical line mid and to left
+        case 0x258e : return 116; // thick line left
+        case 0x258d : return 117; // double thick line left
+        case 0x1fb88: return 118; // double thick line right
+        case 0x1fb82: return 119; // double thick line top
+        case 0x1fb83: return 120; // triple thick line top
+        case 0x2583 : return 121; // quadruple thick line bottom
+        case 0x1fb7f: return 122; // stroked br quarter
+        case 0x2596 : return 123; // filled bl quarter
+        case 0x259d : return 124; // filled tr quarter
+        case 0x2518 : return 125; // stroked tl quarter
+        case 0x2598 : return 126; // filled tl quarter
+        case 0x259a : return 127; // filled tl and br quarter
+        default     : return 32;
       }
     };
 
@@ -3154,8 +3416,8 @@ asciiToPet(uchar ascii, ulong utf, bool reverse)
       case '[': return 27;
       case '\\': return 28;
       case ']': return 29;
-      case '^': return 30;
-      case '~': return 31;
+      case '^': return 30; // up arrow
+      case '~': return 31; // back arrow
       case ' ': return 32;
       case '!': return 33;
       case '"': return 34;
@@ -3246,71 +3508,80 @@ petToAscii(uchar pet, ulong &utf, bool &reverse)
 
   // 64-127 : graphic characters
   switch (pet) {
-    case 64 : utf = 0     ; return 0; // horizontal mid line
-    case 65 : utf = 0x2660; return 0; // spades suit
-    case 66 : utf = 0     ; return 0; // vertical line 1
-    case 67 : utf = 0     ; return 0; // horizontal line 1
-    case 68 : utf = 0     ; return 0; // horizontal line 2
-    case 69 : utf = 0     ; return 0; // horizontal line 3
-    case 70 : utf = 0     ; return 0; // horizontal line 4
-    case 71 : utf = 0     ; return 0; // vertical line 2
-    case 72 : utf = 0     ; return 0; // vertical line 3
-    case 73 : utf = 0x256e; return 0; // round corner ll
-    case 74 : utf = 0x2570; return 0; // round corner ur
-    case 75 : utf = 0x256f; return 0; // round corner ul
-    case 76 : utf = 0     ; return 0; // square corner ll
-    case 77 : utf = 0x2572; return 0; // diagonal tl->br
-    case 78 : utf = 0x2571; return 0; // diagonal bl->tr
-    case 79 : utf = 0     ; return 0; // square corner tl
-    case 80 : utf = 0     ; return 0; // square corner tr
-    case 81 : utf = 0x25cf; return 0; // white filled circle, black square
-    case 82 : utf = 0     ; return 0; // horizontal line 5
-    case 83 : utf = 0x2665; return 0; // hearts suit
-    case 84 : utf = 0     ; return 0; // vertical line 4
-    case 85 : utf = 0x256d; return 0; // round corner lr
-    case 86 : utf = 0x2573; return 0; // cross
-    case 87 : utf = 0x25cb; return 0; // white stroked circle, black square
-    case 88 : utf = 0x2663; return 0; // clubs suit
-    case 89 : utf = 0     ; return 0; // vertical line 5
-    case 90 : utf = 0x2666; return 0; // diamonds suit
-    case 91 : utf = 0x253c; return 0; // plus
-    case 92 : utf = 0     ; return 0; // hash fill left half
-    case 93 : utf = 0x2502; return 0; // vertical line 5
-    case 94 : utf = 0x0360; return 0; // pi
-    case 95 : utf = 0x25e5; return 0; // filled tr triangle
-    case 96 : utf = 0     ; return 0; // space
-    case 97 : utf = 0x258c; return 0; // filled left side
-    case 98 : utf = 0x2584; return 0; // filled bottom side
-    case 99 : utf = 0x2594; return 0; // filled top side
-    case 100: utf = 0x2581; return 0; // horizontal line bottom
-    case 101: utf = 0x258f; return 0; // vertical line left
-    case 102: utf = 0x2592; return 0; // hash fill
-    case 103: utf = 0x2595; return 0; // line top and right
-    case 104: utf = 0     ; return 0; // hash fill bottom half
-    case 105: utf = 0x25e4; return 0; // filled tl triangle
-    case 106: utf = 0     ; return 0; // thick line right
-    case 107: utf = 0x251c; return 0; // vertical line mid and to right
-    case 108: utf = 0x2597; return 0; // filled br quarter
-    case 109: utf = 0x2514; return 0; // stroked tr quarter
-    case 110: utf = 0x2510; return 0; // stroked bl quarter
-    case 111: utf = 0x2582; return 0; // thick line bottom
-    case 112: utf = 0x250c; return 0; // stroked br quarter
-    case 113: utf = 0x2534; return 0; // horizontal line mid and to top
-    case 114: utf = 0x252c; return 0; // horizontal line mid and to bottom
-    case 115: utf = 0x2524; return 0; // vertical line mid and to left
-    case 116: utf = 0x258e; return 0; // thick line left
-    case 117: utf = 0x258d; return 0; // double thick line left
-    case 118: utf = 0     ; return 0; // double thick line right
-    case 119: utf = 0     ; return 0; // double thick line top
-    case 120: utf = 0     ; return 0; // triple thick line top
-    case 121: utf = 0x2583; return 0; // quadruple thick line bottom
-    case 122: utf = 0     ; return 0; // stroked br quarter
-    case 123: utf = 0x2596; return 0; // filled bl quarter
-    case 124: utf = 0x259d; return 0; // filled tr quarter
-    case 125: utf = 0x2518; return 0; // stroked tl quarter
-    case 126: utf = 0x2598; return 0; // filled tl quarter
-    case 127: utf = 0x259a; return 0; // filled tl and br quarter
+    case 64 : utf = 0x1fb79; return 0; // horizontal mid line
+    case 65 : utf = 0x2660 ; return 0; // spades suit
+    case 66 : utf = 0x1fb72; return 0; // vertical line 1
+    case 67 : utf = 0x1fb78; return 0; // horizontal line 1
+    case 68 : utf = 0x1fb77; return 0; // horizontal line 2
+    case 69 : utf = 0x1fb76; return 0; // horizontal line 3
+    case 70 : utf = 0x1fb7a; return 0; // horizontal line 4
+    case 71 : utf = 0x1fb71; return 0; // vertical line 2
+    case 72 : utf = 0x1fb74; return 0; // vertical line 3
+    case 73 : utf = 0x256e ; return 0; // round corner ll
+    case 74 : utf = 0x2570 ; return 0; // round corner ur
+    case 75 : utf = 0x256f ; return 0; // round corner ul
+    case 76 : utf = 0x1fb7c; return 0; // square corner ll
+    case 77 : utf = 0x2572 ; return 0; // diagonal tl->br
+    case 78 : utf = 0x2571 ; return 0; // diagonal bl->tr
+    case 79 : utf = 0x1fb7d; return 0; // square corner tl
+    case 80 : utf = 0x1fb7e; return 0; // square corner tr
+    case 81 : utf = 0x25cf ; return 0; // white filled circle, black square
+    case 82 : utf = 0x1fb7b; return 0; // horizontal line 5
+    case 83 : utf = 0x2665 ; return 0; // hearts suit
+    case 84 : utf = 0x1fb70; return 0; // vertical line 4
+    case 85 : utf = 0x256d ; return 0; // round corner lr
+    case 86 : utf = 0x2573 ; return 0; // cross
+    case 87 : utf = 0x25cb ; return 0; // white stroked circle, black square
+    case 88 : utf = 0x2663 ; return 0; // clubs suit
+    case 89 : utf = 0x1fb75; return 0; // vertical line 5
+    case 90 : utf = 0x2666 ; return 0; // diamonds suit
+    case 91 : utf = 0x253c ; return 0; // plus
+    case 92 : utf = 0x1fb8c; return 0; // hash fill left half
+    case 93 : utf = 0x2502 ; return 0; // vertical line 5
+    case 94 : utf = 0x0360 ; return 0; // pi
+    case 95 : utf = 0x25e5 ; return 0; // filled tr triangle
+    case 96 : utf = 0x00a0 ; return 0; // space
+    case 97 : utf = 0x258c ; return 0; // filled left side
+    case 98 : utf = 0x2584 ; return 0; // filled bottom side
+    case 99 : utf = 0x2594 ; return 0; // filled top side
+    case 100: utf = 0x2581 ; return 0; // horizontal line bottom
+    case 101: utf = 0x258f ; return 0; // vertical line left
+    case 102: utf = 0x2592 ; return 0; // hash fill
+    case 103: utf = 0x2595 ; return 0; // line top and right
+    case 104: utf = 0x1fb8f; return 0; // hash fill bottom half
+    case 105: utf = 0x25e4 ; return 0; // filled tl triangle
+    case 106: utf = 0x1fb87; return 0; // thick line right
+    case 107: utf = 0x251c ; return 0; // vertical line mid and to right
+    case 108: utf = 0x2597 ; return 0; // filled br quarter
+    case 109: utf = 0x2514 ; return 0; // stroked tr quarter
+    case 110: utf = 0x2510 ; return 0; // stroked bl quarter
+    case 111: utf = 0x2582 ; return 0; // thick line bottom
+    case 112: utf = 0x250c ; return 0; // stroked br quarter
+    case 113: utf = 0x2534 ; return 0; // horizontal line mid and to top
+    case 114: utf = 0x252c ; return 0; // horizontal line mid and to bottom
+    case 115: utf = 0x2524 ; return 0; // vertical line mid and to left
+    case 116: utf = 0x258e ; return 0; // thick line left
+    case 117: utf = 0x258d ; return 0; // double thick line left
+    case 118: utf = 0x1fb88; return 0; // double thick line right
+    case 119: utf = 0x1fb82; return 0; // double thick line top
+    case 120: utf = 0x1fb83; return 0; // triple thick line top
+    case 121: utf = 0x2583 ; return 0; // quadruple thick line bottom
+    case 122: utf = 0x1fb7f; return 0; // stroked br quarter
+    case 123: utf = 0x2596 ; return 0; // filled bl quarter
+    case 124: utf = 0x259d ; return 0; // filled tr quarter
+    case 125: utf = 0x2518 ; return 0; // stroked tl quarter
+    case 126: utf = 0x2598 ; return 0; // filled tl quarter
+    case 127: utf = 0x259a ; return 0; // filled tl and br quarter
   }
 
   return ' '; // TODO
+}
+
+//---
+
+CPetBasicToken::
+CPetBasicToken(const CPetBasic *b, const TokenType &type, const std::string &str) :
+ basic_(b), type_(type)
+{
+  str_ = str;
 }

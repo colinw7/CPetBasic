@@ -16,13 +16,27 @@ CONFIG += c++17
 SOURCES += \
 main.cpp \
 CQPetBasic.cpp \
+CQPetBasicApp.cpp \
+CQPetBasicCommand.cpp \
+CQPetBasicDbg.cpp \
+CQPetBasicKeyboard.cpp \
+CQPetBasicStatus.cpp \
+CQPetBasicTerm.cpp \
+CQPetBasicVariables.cpp \
 CQCommand.cpp \
 
 HEADERS += \
 CQPetBasic.h \
+CQPetBasicApp.h \
+CQPetBasicCommand.h \
+CQPetBasicDbg.h \
+CQPetBasicKeyboard.h \
+CQPetBasicStatus.h \
+CQPetBasicTerm.h \
+CQPetBasicVariables.h \
 CQCommand.h \
 
-DESTDIR     = ../lib
+DESTDIR     = ../bin
 OBJECTS_DIR = ../obj
 LIB_DIR     = ../lib
 

@@ -12,17 +12,74 @@
 
 class CPetBasicExpr;
 
+//---
+
+class CPetBasic;
+
+enum class CPetBasicTokenType {
+  NONE,
+  KEYWORD,
+  VARIABLE,
+  OPERATOR,
+  SEPARATOR,
+  STRING,
+  NUMBER
+};
+
+class CPetBasicToken {
+ public:
+  using TokenType = CPetBasicTokenType;
+
+ public:
+  CPetBasicToken(const CPetBasic *b, const TokenType &type=TokenType::NONE,
+                 const std::string &str="");
+
+  virtual ~CPetBasicToken() { }
+
+  const TokenType &type() const { return type_; }
+
+  const std::string &str() const { return str_; }
+
+  virtual std::string toString() const {
+    return str_;
+  }
+
+  virtual std::string listString() const {
+    return str_;
+  }
+
+  virtual std::string exprString() const {
+    return str_;
+  }
+
+  virtual long   toInteger() const { return 0; }
+  virtual double toReal   () const { return 0.0; }
+  virtual bool   isReal   () const { return false; }
+
+  virtual void printEsc(std::ostream &os) const {
+    os << toString();
+  }
+
+  virtual void print(std::ostream &os) const {
+    os << toString();
+  }
+
+  friend std::ostream &operator<<(std::ostream &os, const CPetBasicToken &token) {
+    token.print(os);
+    return os;
+  }
+
+ protected:
+  const CPetBasic* basic_ { nullptr };
+  TokenType        type_  { TokenType::NONE };
+  std::string      str_;
+};
+
+//---
+
 class CPetBasic {
  public:
-  enum class TokenType {
-    NONE,
-    KEYWORD,
-    VARIABLE,
-    OPERATOR,
-    SEPARATOR,
-    STRING,
-    NUMBER
-  };
+  using TokenType = CPetBasicTokenType;
 
   enum class KeywordType {
     NONE,
@@ -97,6 +154,25 @@ class CPetBasic {
 
   using Inds = std::vector<uint>;
 
+  using Token  = CPetBasicToken;
+  using Tokens = std::vector<Token *>;
+
+  struct Statement {
+    Tokens tokens;
+  };
+
+  using Statements = std::vector<Statement>;
+
+  struct LineData {
+    std::string line;
+    uint        lineNum { 0 };
+    uint        lineN   { 0 };
+    Tokens      tokens;
+    Statements  statements;
+  };
+
+  using Lines = std::map<uint, LineData>;
+
  public:
   CPetBasic();
 
@@ -131,10 +207,13 @@ class CPetBasic {
   void list();
 
   bool run();
+  bool step();
 
   void loop();
 
   bool inputLine(const std::string &lineBuffer);
+
+  int currentLineNum() const;
 
   //---
 
@@ -166,6 +245,19 @@ class CPetBasic {
 
   //---
 
+  uint numLines() const;
+  uint maxLine() const;
+
+  const Lines &getLines() const { return lines_; }
+
+  std::string lineToString(const LineData &lineData, bool highlight) const;
+
+  virtual void notifyLinesChanged() { }
+
+  virtual void notifyLineNumChanged() { }
+
+  //---
+
   void dimVariable(const std::string &name, const Inds &inds);
 
   CExprValuePtr getVariableValue(const std::string &name, const Inds &inds);
@@ -187,66 +279,24 @@ class CPetBasic {
   static uchar asciiToPet(uchar ascii, ulong utf, bool reverse);
   static uchar petToAscii(uchar pet, ulong &utf, bool &reverse);
 
+  static uchar decodeEmbedded(uchar c);
+  static std::string decodeEmbeddedStr(const std::string &s);
+  static std::string decodeEmbeddedChar(uchar c);
+
  private:
   bool replaceEmbedded(const std::string &str1, std::string &str2) const;
+
+  std::string encodeEmbedded(const std::string &name) const;
 
   KeywordType lookupKeyword(const std::string &str) const;
 
   void initKeywords() const;
 
  private:
-  class Token {
-   public:
-    Token(const CPetBasic *b, const TokenType &type=TokenType::NONE, const std::string &str="") :
-     basic_(b), type_(type) {
-      str_ = str;
-    }
-
-    virtual ~Token() { }
-
-    const TokenType &type() const { return type_; }
-
-    const std::string &str() const { return str_; }
-
-    virtual std::string toString() const {
-      return str_;
-    }
-
-    virtual std::string listString() const {
-      return str_;
-    }
-
-    virtual std::string exprString() const {
-      return str_;
-    }
-
-    virtual long   toInteger() const { return 0; }
-    virtual double toReal   () const { return 0.0; }
-    virtual bool   isReal   () const { return false; }
-
-    virtual void printEsc(std::ostream &os) const {
-      os << toString();
-    }
-
-    virtual void print(std::ostream &os) const {
-      os << toString();
-    }
-
-    friend std::ostream &operator<<(std::ostream &os, const Token &token) {
-      token.print(os);
-      return os;
-    }
-
-   protected:
-    const CPetBasic* basic_ { nullptr };
-    TokenType        type_  { TokenType::NONE };
-    std::string      str_;
-  };
-
-  class KeywordToken : public Token {
+  class KeywordToken : public CPetBasicToken {
    public:
     KeywordToken(const CPetBasic *b, const KeywordType &keywordType, const std::string &str) :
-     Token(b, TokenType::KEYWORD, str), keywordType_(keywordType) {
+     CPetBasicToken(b, TokenType::KEYWORD, str), keywordType_(keywordType) {
     }
 
     const KeywordType &keywordType() const { return keywordType_; }
@@ -266,10 +316,10 @@ class CPetBasic {
 
     void printEsc(std::ostream &os) const override {
       if (keywordType_ == KeywordType::REM) {
-        os << "[43mREM " << str_ << "[0m";
+        os << "\033[43mREM " << str_ << "\033[0m";
       }
       else {
-        os << "[33m" << basic_->keywordName(keywordType_) << "[0m";
+        os << "\033[33m" << basic_->keywordName(keywordType_) << "\033[0m";
 
         if (str_ != "")
           os << " " << str_;
@@ -292,14 +342,14 @@ class CPetBasic {
     KeywordType keywordType_;
   };
 
-  class VariableToken : public Token {
+  class VariableToken : public CPetBasicToken {
    public:
     VariableToken(const CPetBasic *b, const std::string &str) :
-     Token(b, TokenType::VARIABLE, str) {
+     CPetBasicToken(b, TokenType::VARIABLE, str) {
     }
 
     void printEsc(std::ostream &os) const override {
-      os << "[31m" << str_ << "[0m";
+      os << "\033[31m" << str_ << "\033[0m";
     }
 
     void print(std::ostream &os) const override {
@@ -307,10 +357,10 @@ class CPetBasic {
     }
   };
 
-  class OperatorToken : public Token {
+  class OperatorToken : public CPetBasicToken {
    public:
     OperatorToken(const CPetBasic *b, const std::string &str) :
-     Token(b, TokenType::OPERATOR, str) {
+     CPetBasicToken(b, TokenType::OPERATOR, str) {
       if      (str_ == "#"  ) operatorType_ = OperatorType::HASH;
       else if (str_ == "="  ) operatorType_ = OperatorType::ASSIGN;
       else if (str_ == "+"  ) operatorType_ = OperatorType::PLUS;
@@ -332,7 +382,7 @@ class CPetBasic {
     const OperatorType &operatorType() const { return operatorType_; }
 
     void printEsc(std::ostream &os) const override {
-      os << "[32m" << str_ << "[0m";
+      os << "\033[32m" << str_ << "\033[0m";
     }
 
     void print(std::ostream &os) const override {
@@ -343,10 +393,10 @@ class CPetBasic {
     OperatorType operatorType_ { OperatorType::NONE };
   };
 
-  class SeparatorToken : public Token {
+  class SeparatorToken : public CPetBasicToken {
    public:
     SeparatorToken(const CPetBasic *b, const std::string &str) :
-     Token(b, TokenType::SEPARATOR, str) {
+     CPetBasicToken(b, TokenType::SEPARATOR, str) {
       assert(str_.size() == 1);
 
       switch (str_[0]) {
@@ -362,7 +412,7 @@ class CPetBasic {
     const SeparatorType &separatorType() const { return separatorType_; }
 
     void printEsc(std::ostream &os) const override {
-      os << "[34m" << str_ << "[0m";
+      os << "\033[34m" << str_ << "\033[0m";
     }
 
     void print(std::ostream &os) const override {
@@ -373,29 +423,34 @@ class CPetBasic {
     SeparatorType separatorType_ { SeparatorType::NONE };
   };
 
-  class StringToken : public Token {
+  class StringToken : public CPetBasicToken {
    public:
-    StringToken(const CPetBasic *b, const std::string &str) :
-     Token(b, TokenType::STRING, str) {
+    StringToken(const CPetBasic *b, const std::string &str, bool embedded) :
+     CPetBasicToken(b, TokenType::STRING, str), embedded_(embedded) {
     }
+
+    bool isEmbedded() { return embedded_; }
 
     std::string listString() const override {
       return "\"" + str_ + "\"";
     }
 
     void printEsc(std::ostream &os) const override {
-      os << "[35m\"" << str_ << "\"[0m";
+      os << "\033[35m\"" << str_ << "\"\033[0m";
     }
 
     void print(std::ostream &os) const override {
       os << "\"" << str_ << "\"";
     }
+
+   private:
+    bool embedded_ { false };
   };
 
-  class NumberToken : public Token {
+  class NumberToken : public CPetBasicToken {
    public:
     NumberToken(const CPetBasic *b, const std::string &str) :
-     Token(b, TokenType::NUMBER, str) {
+     CPetBasicToken(b, TokenType::NUMBER, str) {
       ivalue_ = std::stol(str_);
       rvalue_ = std::stod(str_);
 
@@ -410,7 +465,7 @@ class CPetBasic {
     double rvalue() const { return rvalue_; }
 
     void printEsc(std::ostream &os) const override {
-      os << "[36m" << str_ << "[0m";
+      os << "\033[36m" << str_ << "\033[0m";
     }
 
     void print(std::ostream &os) const override {
@@ -422,24 +477,6 @@ class CPetBasic {
     double rvalue_ { 0.0 };
     bool   isReal_ { false };
   };
-
-  using Tokens = std::vector<Token *>;
-
-  struct Statement {
-    Tokens tokens;
-  };
-
-  using Statements = std::vector<Statement>;
-
-  struct LineData {
-    std::string line;
-    uint        lineNum { 0 };
-    uint        lineN   { 0 };
-    Tokens      tokens;
-    Statements  statements;
-  };
-
-  using Lines = std::map<uint, LineData>;
 
   class TokenList {
    public:
@@ -475,6 +512,8 @@ class CPetBasic {
 
   void listLine(const LineData &lineData) const;
 
+  std::string statementToString(const Statement &statement, char lastChar, bool highlight) const;
+
   //---
 
   KeywordToken *createKeyword(KeywordType keywordType, const std::string &str) const {
@@ -501,8 +540,8 @@ class CPetBasic {
     return sep;
   }
 
-  StringToken *createString(const std::string &str) const {
-    auto *op = new StringToken(this, str);
+  StringToken *createString(const std::string &str, bool embedded) const {
+    auto *op = new StringToken(this, str, embedded);
 
     return op;
   }
@@ -593,10 +632,12 @@ class CPetBasic {
 
   //---
 
+  void initRunData();
   void initRunState();
 
-  void initRun();
   bool contRun();
+
+  void setLineInd(int ind);
 
   //---
 
@@ -677,6 +718,7 @@ class CPetBasic {
 
   // Run State
 
+  bool      runDataValid_ { false };
   LineStack lineStack_;
   ForDatas  forDatas_;
 

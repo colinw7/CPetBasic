@@ -1,5 +1,5 @@
+#include <CQPetBasicApp.h>
 #include <CQPetBasic.h>
-#include <CPetBasic.h>
 #include <QApplication>
 
 int
