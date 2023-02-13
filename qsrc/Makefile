@@ -14,10 +14,10 @@ EQ            = =
 
 CC            = gcc
 CXX           = g++
-DEFINES       = -DQT_NO_DEBUG -DQT_WIDGETS_LIB -DQT_GUI_LIB -DQT_CORE_LIB
+DEFINES       = -DQT_NO_DEBUG -DQT_SVG_LIB -DQT_WIDGETS_LIB -DQT_GUI_LIB -DQT_CORE_LIB
 CFLAGS        = -pipe -O2 -Wall -Wextra -D_REENTRANT -fPIC $(DEFINES)
 CXXFLAGS      = -pipe -std=c++17 -O2 -std=gnu++1z -Wall -Wextra -D_REENTRANT -fPIC $(DEFINES)
-INCPATH       = -I. -I. -I../include -I../include/Expr -I../../CQUtil/include -I../../CUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I.moc -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++
+INCPATH       = -I. -I. -I../include -I../include/Expr -I../../CQModelView/include -I../../CQBaseModel/include -I../../CQUtil/include -I../../CUtil/include -I../../CStrUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtSvg -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I.moc -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++
 QMAKE         = /usr/lib/qt5/bin/qmake
 DEL_FILE      = rm -f
 CHK_DIR_EXISTS= test -d
@@ -40,7 +40,7 @@ DISTNAME      = CQPetBasic1.0.0
 DISTDIR = /home/colinw/git/CPetBasic/obj/CQPetBasic1.0.0
 LINK          = g++
 LFLAGS        = -Wl,-O1
-LIBS          = $(SUBLIBS) -L../lib -L../../CQUtil/lib -L../../CReadLine/lib -L../../CFont/lib -L../../CImageLib/lib -L../../CConfig/lib -L../../CUtil/lib -L../../CFileUtil/lib -L../../CFile/lib -L../../CMath/lib -L../../CStrUtil/lib -L../../CRegExp/lib -L../../COS/lib -lCPetBasic -lCQUtil -lCReadLine -lCFont -lCImageLib -lCConfig -lCUtil -lCFileUtil -lCFile -lCMath -lCStrUtil -lCRegExp -lCOS -lpng -ljpeg -ltre -lreadline /usr/lib/x86_64-linux-gnu/libQt5Widgets.so /usr/lib/x86_64-linux-gnu/libQt5Gui.so /usr/lib/x86_64-linux-gnu/libQt5Core.so -lGL -lpthread   
+LIBS          = $(SUBLIBS) -L../lib -L../../CQModelView/lib -L../../CQBaseModel/lib -L../../CQUtil/lib -L../../CReadLine/lib -L../../CFont/lib -L../../CImageLib/lib -L../../CConfig/lib -L../../CUtil/lib -L../../CFileUtil/lib -L../../CFile/lib -L../../CMath/lib -L../../CStrUtil/lib -L../../CRegExp/lib -L../../COS/lib -lCPetBasic -lCQModelView -lCQBaseModel -lCQUtil -lCReadLine -lCFont -lCImageLib -lCConfig -lCUtil -lCFileUtil -lCFile -lCMath -lCStrUtil -lCRegExp -lCOS -lpng -ljpeg -ltre -lreadline -lcurses /usr/lib/x86_64-linux-gnu/libQt5Svg.so /usr/lib/x86_64-linux-gnu/libQt5Widgets.so /usr/lib/x86_64-linux-gnu/libQt5Gui.so /usr/lib/x86_64-linux-gnu/libQt5Core.so -lGL -lpthread   
 AR            = ar cqs
 RANLIB        = 
 SED           = sed
@@ -53,9 +53,9 @@ OBJECTS_DIR   = ../obj/
 ####### Files
 
 SOURCES       = main.cpp \
-		CQPetBasic.cpp \
 		CQPetBasicApp.cpp \
 		CQPetBasicCommand.cpp \
+		CQPetBasic.cpp \
 		CQPetBasicDbg.cpp \
 		CQPetBasicKeyboard.cpp \
 		CQPetBasicStatus.cpp \
@@ -70,9 +70,9 @@ SOURCES       = main.cpp \
 		.moc/moc_CQPetBasicVariables.cpp \
 		.moc/moc_CQCommand.cpp
 OBJECTS       = ../obj/main.o \
-		../obj/CQPetBasic.o \
 		../obj/CQPetBasicApp.o \
 		../obj/CQPetBasicCommand.o \
+		../obj/CQPetBasic.o \
 		../obj/CQPetBasicDbg.o \
 		../obj/CQPetBasicKeyboard.o \
 		../obj/CQPetBasicStatus.o \
@@ -185,9 +185,9 @@ DIST          = /usr/lib/x86_64-linux-gnu/qt5/mkspecs/features/spec_pre.prf \
 		CQPetBasicTerm.h \
 		CQPetBasicVariables.h \
 		CQCommand.h main.cpp \
-		CQPetBasic.cpp \
 		CQPetBasicApp.cpp \
 		CQPetBasicCommand.cpp \
+		CQPetBasic.cpp \
 		CQPetBasicDbg.cpp \
 		CQPetBasicKeyboard.cpp \
 		CQPetBasicStatus.cpp \
@@ -403,7 +403,7 @@ distdir: FORCE
 	$(COPY_FILE) --parents $(DIST) $(DISTDIR)/
 	$(COPY_FILE) --parents /usr/lib/x86_64-linux-gnu/qt5/mkspecs/features/data/dummy.cpp $(DISTDIR)/
 	$(COPY_FILE) --parents CQPetBasic.h CQPetBasicApp.h CQPetBasicCommand.h CQPetBasicDbg.h CQPetBasicKeyboard.h CQPetBasicStatus.h CQPetBasicTerm.h CQPetBasicVariables.h CQCommand.h $(DISTDIR)/
-	$(COPY_FILE) --parents main.cpp CQPetBasic.cpp CQPetBasicApp.cpp CQPetBasicCommand.cpp CQPetBasicDbg.cpp CQPetBasicKeyboard.cpp CQPetBasicStatus.cpp CQPetBasicTerm.cpp CQPetBasicVariables.cpp CQCommand.cpp $(DISTDIR)/
+	$(COPY_FILE) --parents main.cpp CQPetBasicApp.cpp CQPetBasicCommand.cpp CQPetBasic.cpp CQPetBasicDbg.cpp CQPetBasicKeyboard.cpp CQPetBasicStatus.cpp CQPetBasicTerm.cpp CQPetBasicVariables.cpp CQCommand.cpp $(DISTDIR)/
 
 
 clean: compiler_clean 
@@ -441,45 +441,49 @@ compiler_moc_header_clean:
 .moc/moc_CQPetBasicApp.cpp: CQPetBasicApp.h \
 		.moc/moc_predefs.h \
 		/usr/lib/qt5/bin/moc
-	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQPetBasicApp.h -o .moc/moc_CQPetBasicApp.cpp
+	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQModelView/include -I/home/colinw/git/CQBaseModel/include -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/home/colinw/git/CStrUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtSvg -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQPetBasicApp.h -o .moc/moc_CQPetBasicApp.cpp
 
 .moc/moc_CQPetBasicCommand.cpp: CQPetBasicCommand.h \
 		CQCommand.h \
 		../../CQUtil/include/CQScrollArea.h \
 		.moc/moc_predefs.h \
 		/usr/lib/qt5/bin/moc
-	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQPetBasicCommand.h -o .moc/moc_CQPetBasicCommand.cpp
+	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQModelView/include -I/home/colinw/git/CQBaseModel/include -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/home/colinw/git/CStrUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtSvg -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQPetBasicCommand.h -o .moc/moc_CQPetBasicCommand.cpp
 
 .moc/moc_CQPetBasicDbg.cpp: CQPetBasicDbg.h \
 		.moc/moc_predefs.h \
 		/usr/lib/qt5/bin/moc
-	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQPetBasicDbg.h -o .moc/moc_CQPetBasicDbg.cpp
+	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQModelView/include -I/home/colinw/git/CQBaseModel/include -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/home/colinw/git/CStrUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtSvg -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQPetBasicDbg.h -o .moc/moc_CQPetBasicDbg.cpp
 
 .moc/moc_CQPetBasicKeyboard.cpp: CQPetBasicKeyboard.h \
 		.moc/moc_predefs.h \
 		/usr/lib/qt5/bin/moc
-	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQPetBasicKeyboard.h -o .moc/moc_CQPetBasicKeyboard.cpp
+	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQModelView/include -I/home/colinw/git/CQBaseModel/include -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/home/colinw/git/CStrUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtSvg -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQPetBasicKeyboard.h -o .moc/moc_CQPetBasicKeyboard.cpp
 
 .moc/moc_CQPetBasicStatus.cpp: CQPetBasicStatus.h \
 		.moc/moc_predefs.h \
 		/usr/lib/qt5/bin/moc
-	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQPetBasicStatus.h -o .moc/moc_CQPetBasicStatus.cpp
+	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQModelView/include -I/home/colinw/git/CQBaseModel/include -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/home/colinw/git/CStrUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtSvg -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQPetBasicStatus.h -o .moc/moc_CQPetBasicStatus.cpp
 
 .moc/moc_CQPetBasicTerm.cpp: CQPetBasicTerm.h \
+		../include/CPetBasic.h \
+		../include/Expr/CExprTypes.h \
+		../include/CPetBasicTerm.h \
 		.moc/moc_predefs.h \
 		/usr/lib/qt5/bin/moc
-	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQPetBasicTerm.h -o .moc/moc_CQPetBasicTerm.cpp
+	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQModelView/include -I/home/colinw/git/CQBaseModel/include -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/home/colinw/git/CStrUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtSvg -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQPetBasicTerm.h -o .moc/moc_CQPetBasicTerm.cpp
 
 .moc/moc_CQPetBasicVariables.cpp: CQPetBasicVariables.h \
+		../../CQModelView/include/CQModelView.h \
 		.moc/moc_predefs.h \
 		/usr/lib/qt5/bin/moc
-	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQPetBasicVariables.h -o .moc/moc_CQPetBasicVariables.cpp
+	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQModelView/include -I/home/colinw/git/CQBaseModel/include -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/home/colinw/git/CStrUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtSvg -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQPetBasicVariables.h -o .moc/moc_CQPetBasicVariables.cpp
 
 .moc/moc_CQCommand.cpp: CQCommand.h \
 		../../CQUtil/include/CQScrollArea.h \
 		.moc/moc_predefs.h \
 		/usr/lib/qt5/bin/moc
-	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQCommand.h -o .moc/moc_CQCommand.cpp
+	/usr/lib/qt5/bin/moc $(DEFINES) --include /home/colinw/git/CPetBasic/qsrc/.moc/moc_predefs.h -I/usr/lib/x86_64-linux-gnu/qt5/mkspecs/linux-g++ -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/qsrc -I/home/colinw/git/CPetBasic/include -I/home/colinw/git/CPetBasic/include/Expr -I/home/colinw/git/CQModelView/include -I/home/colinw/git/CQBaseModel/include -I/home/colinw/git/CQUtil/include -I/home/colinw/git/CUtil/include -I/home/colinw/git/CStrUtil/include -I/usr/include/x86_64-linux-gnu/qt5 -I/usr/include/x86_64-linux-gnu/qt5/QtSvg -I/usr/include/x86_64-linux-gnu/qt5/QtWidgets -I/usr/include/x86_64-linux-gnu/qt5/QtGui -I/usr/include/x86_64-linux-gnu/qt5/QtCore -I/usr/include/c++/11 -I/usr/include/x86_64-linux-gnu/c++/11 -I/usr/include/c++/11/backward -I/usr/lib/gcc/x86_64-linux-gnu/11/include -I/usr/local/include -I/usr/include/x86_64-linux-gnu -I/usr/include CQCommand.h -o .moc/moc_CQCommand.cpp
 
 compiler_moc_objc_header_make_all:
 compiler_moc_objc_header_clean:
@@ -503,27 +507,20 @@ compiler_clean: compiler_moc_predefs_clean compiler_moc_header_clean
 		../include/Expr/CExprTypes.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o ../obj/main.o main.cpp
 
-../obj/CQPetBasic.o: CQPetBasic.cpp CQPetBasic.h \
-		../include/CPetBasic.h \
-		../include/Expr/CExprTypes.h \
-		CQPetBasicTerm.h \
-		CQPetBasicApp.h \
-		../../CQUtil/include/CQUtil.h \
-		../../CQUtil/include/CQUtilMeta.h
-	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o ../obj/CQPetBasic.o CQPetBasic.cpp
-
 ../obj/CQPetBasicApp.o: CQPetBasicApp.cpp CQPetBasicApp.h \
 		CQPetBasicTerm.h \
+		../include/CPetBasic.h \
+		../include/Expr/CExprTypes.h \
+		../include/CPetBasicTerm.h \
 		CQPetBasicDbg.h \
 		CQPetBasicVariables.h \
+		../../CQModelView/include/CQModelView.h \
 		CQPetBasicKeyboard.h \
 		CQPetBasicCommand.h \
 		CQCommand.h \
 		../../CQUtil/include/CQScrollArea.h \
 		CQPetBasicStatus.h \
 		CQPetBasic.h \
-		../include/CPetBasic.h \
-		../include/Expr/CExprTypes.h \
 		../../CQUtil/include/CQUtil.h \
 		../../CQUtil/include/CQUtilMeta.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o ../obj/CQPetBasicApp.o CQPetBasicApp.cpp
@@ -532,10 +529,22 @@ compiler_clean: compiler_moc_predefs_clean compiler_moc_header_clean
 		CQCommand.h \
 		../../CQUtil/include/CQScrollArea.h \
 		CQPetBasicApp.h \
-		CQPetBasic.h \
+		CQPetBasicTerm.h \
 		../include/CPetBasic.h \
-		../include/Expr/CExprTypes.h
+		../include/Expr/CExprTypes.h \
+		../include/CPetBasicTerm.h \
+		CQPetBasic.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o ../obj/CQPetBasicCommand.o CQPetBasicCommand.cpp
+
+../obj/CQPetBasic.o: CQPetBasic.cpp CQPetBasic.h \
+		../include/CPetBasic.h \
+		../include/Expr/CExprTypes.h \
+		CQPetBasicTerm.h \
+		../include/CPetBasicTerm.h \
+		CQPetBasicApp.h \
+		../../CQUtil/include/CQUtil.h \
+		../../CQUtil/include/CQUtilMeta.h
+	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o ../obj/CQPetBasic.o CQPetBasic.cpp
 
 ../obj/CQPetBasicDbg.o: CQPetBasicDbg.cpp CQPetBasicDbg.h \
 		CQPetBasic.h \
@@ -554,9 +563,10 @@ compiler_clean: compiler_moc_predefs_clean compiler_moc_header_clean
 ../obj/CQPetBasicKeyboard.o: CQPetBasicKeyboard.cpp CQPetBasicKeyboard.h \
 		CQPetBasicApp.h \
 		CQPetBasicTerm.h \
-		CQPetBasic.h \
 		../include/CPetBasic.h \
 		../include/Expr/CExprTypes.h \
+		../include/CPetBasicTerm.h \
+		CQPetBasic.h \
 		images/pet_keyboard_png.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o ../obj/CQPetBasicKeyboard.o CQPetBasicKeyboard.cpp
 
@@ -565,22 +575,57 @@ compiler_clean: compiler_moc_predefs_clean compiler_moc_header_clean
 		CQPetBasic.h \
 		../include/CPetBasic.h \
 		../include/Expr/CExprTypes.h \
+		../../CQUtil/include/CQPixmapButton.h \
 		../../CQUtil/include/CQUtil.h \
-		../../CQUtil/include/CQUtilMeta.h
+		../../CQUtil/include/CQUtilMeta.h \
+		svg/keyboard_svg.h \
+		../../CQUtil/include/CQPixmapCache.h \
+		svg/console_svg.h \
+		svg/debug_svg.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o ../obj/CQPetBasicStatus.o CQPetBasicStatus.cpp
 
 ../obj/CQPetBasicTerm.o: CQPetBasicTerm.cpp CQPetBasicTerm.h \
-		CQPetBasicApp.h \
-		CQPetBasic.h \
 		../include/CPetBasic.h \
 		../include/Expr/CExprTypes.h \
+		../include/CPetBasicTerm.h \
+		CQPetBasicApp.h \
+		CQPetBasic.h \
 		../../CQUtil/include/CQUtil.h \
 		../../CQUtil/include/CQUtilMeta.h \
 		../../CUtil/include/CUtf8.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o ../obj/CQPetBasicTerm.o CQPetBasicTerm.cpp
 
 ../obj/CQPetBasicVariables.o: CQPetBasicVariables.cpp CQPetBasicVariables.h \
-		../../CQUtil/include/CQTableWidget.h \
+		../../CQModelView/include/CQModelView.h \
+		CQPetBasicApp.h \
+		CQPetBasic.h \
+		../include/CPetBasic.h \
+		../include/Expr/CExprTypes.h \
+		../include/Expr/CExpr.h \
+		../../CStrUtil/include/CStrUtil.h \
+		../include/Expr/CExprBValue.h \
+		../include/Expr/CExprIValue.h \
+		../include/Expr/CExprRValue.h \
+		../include/Expr/CExprSValue.h \
+		../include/Expr/CExprValue.h \
+		../include/Expr/CExprOperator.h \
+		../include/Expr/CExprToken.h \
+		../include/Expr/CExprTokenBase.h \
+		../include/Expr/CExprTokenStack.h \
+		../include/Expr/CExprParse.h \
+		../include/Expr/CExprVariable.h \
+		../include/Expr/CExprInterp.h \
+		../include/Expr/CExprCompile.h \
+		../include/Expr/CExprFunction.h \
+		../include/Expr/CExprExecute.h \
+		../include/Expr/CExprStrgen.h \
+		../include/Expr/CExprError.h \
+		../include/Expr/CExprFunctionMgr.h \
+		../include/Expr/CExprOperatorMgr.h \
+		../include/Expr/CExprVariableMgr.h \
+		../../CQBaseModel/include/CQDataModel.h \
+		../../CQBaseModel/include/CQBaseModel.h \
+		../../CQBaseModel/include/CQBaseModelTypes.h \
 		../../CQUtil/include/CQUtil.h \
 		../../CQUtil/include/CQUtilMeta.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o ../obj/CQPetBasicVariables.o CQPetBasicVariables.cpp

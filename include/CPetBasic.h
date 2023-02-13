@@ -6,11 +6,15 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <set>
 #include <iostream>
 #include <memory>
 #include <cassert>
 
 class CPetBasicExpr;
+class CPetBasicTerm;
+
+using uchar = unsigned char;
 
 //---
 
@@ -77,6 +81,69 @@ class CPetBasicToken {
 
 //---
 
+class CPetsciChar {
+ public:
+  CPetsciChar() { }
+
+  explicit CPetsciChar(uchar c) :
+   c_(c) {
+  }
+
+  uchar c() const { return c_; }
+
+  void shift() { assert(c_ < 196); c_ += 64; }
+
+  bool isReversed() const { return c_ >= 128; }
+
+  void reverse() { assert(! isReversed()); c_ += 128; }
+  void unreverse() { assert(isReversed()); c_ -= 128; }
+
+ private:
+  uchar c_ { 0 };
+
+};
+
+class CAsciiChar {
+ public:
+  CAsciiChar() { }
+
+  explicit CAsciiChar(uchar c) :
+   c_(c) {
+  }
+
+  uchar c() const { return c_; }
+
+ private:
+  uchar c_ { 0 };
+};
+
+class CPetDrawChar {
+ public:
+  CPetDrawChar() { }
+
+  explicit CPetDrawChar(uchar c, ulong utf=0, bool reverse=false) :
+   c_(c), utf_(utf), reverse_(reverse) {
+  }
+
+  bool isSet() const { return c_ != 0 || utf_ != 0; }
+
+  uchar c() const { return c_; }
+  void setC(uchar c) { c_ = c; }
+
+  ulong utf() const { return utf_; }
+  void setUtf(ulong utf) { utf_ = utf; }
+
+  bool isReverse() const { return reverse_; }
+  void setReverse(bool b) { reverse_ = b; }
+
+ private:
+  uchar c_       { 0 };     // ascii char to draw
+  ulong utf_     { 0 };     // utf-8 char to draw
+  bool  reverse_ { false }; // is reversed
+};
+
+//---
+
 class CPetBasic {
  public:
   using TokenType = CPetBasicTokenType;
@@ -87,6 +154,7 @@ class CPetBasic {
     CLR,
     CONT,
     DATA,
+    DELAY, // custom command
     DIM,
     END,
     FOR,
@@ -150,8 +218,6 @@ class CPetBasic {
     NOT
   };
 
-  using uchar = unsigned char;
-
   using Inds = std::vector<uint>;
 
   using Token  = CPetBasicToken;
@@ -198,6 +264,11 @@ class CPetBasic {
 
   //---
 
+  CPetBasicTerm *term() const { return term_; }
+  void setTerm(CPetBasicTerm *term);
+
+  //---
+
   CPetBasicExpr *expr() const;
 
   //---
@@ -207,18 +278,34 @@ class CPetBasic {
   void list();
 
   bool run();
+
   bool step();
+
+  bool contRun();
+  bool contRunTo(uint lineNum);
+
+  void setRaw(bool b);
 
   void loop();
 
   bool inputLine(const std::string &lineBuffer);
 
+  int lineInd() const { return lineInd_; }
+
   int currentLineNum() const;
+
+  int lineIndNum(int lineInd) const;
 
   //---
 
   bool isStopped() const { return stopped_; }
-  void setStopped(bool b) { stopped_ = b; }
+  virtual void setStopped(bool b);
+
+  bool isReverse() const { return reverse_; }
+  virtual void setReverse(bool b);
+
+  bool isShift() const { return shift_; }
+  virtual void setShift(bool b);
 
   //---
 
@@ -230,10 +317,8 @@ class CPetBasic {
   uchar getMemory(uint addr) const;
   void setMemory(uint addr, uchar value);
 
-  virtual bool getScreenMemory(uint /*r*/, uint /*c*/, uchar& /*value*/) const { return false; }
-  virtual void setScreenMemory(uint /*r*/, uint /*c*/, uchar /*value*/) { }
-
-  virtual void delay() { }
+  virtual bool getScreenMemory(uint r, uint c, uchar& value) const;
+  virtual void setScreenMemory(uint r, uint c, uchar value);
 
   //---
 
@@ -250,6 +335,8 @@ class CPetBasic {
 
   const Lines &getLines() const { return lines_; }
 
+  const LineData *getLineIndData(uint lineInd) const;
+
   std::string lineToString(const LineData &lineData, bool highlight) const;
 
   virtual void notifyLinesChanged() { }
@@ -258,28 +345,41 @@ class CPetBasic {
 
   //---
 
-  void dimVariable(const std::string &name, const Inds &inds);
-
-  CExprValuePtr getVariableValue(const std::string &name, const Inds &inds);
-
-  bool setVariableValue(const std::string &name, const Inds &inds, const CExprValuePtr &value);
-
-  bool setVariableValue(const std::string &name, const CExprValuePtr &value);
+  CExprVariablePtr addVariable(const std::string &name, const CExprValuePtr &value);
 
   CExprVariablePtr getVariable(const std::string &name) const;
+
+  CExprValuePtr getVariableValue(const std::string &name) const;
+  bool setVariableValue(const std::string &name, const CExprValuePtr &value);
+
+  //---
+
+  void dimVariable(const std::string &name, const Inds &inds);
 
   bool hasArrayVariable(const std::string &name) const;
 
   void addArrayVariable(const std::string &name);
 
+  CExprValuePtr getVariableValue(const std::string &name, const Inds &inds);
+  bool setVariableValue(const std::string &name, const Inds &inds, const CExprValuePtr &value);
+
   void clearArrayVariables();
 
   //---
 
-  static uchar asciiToPet(uchar ascii, ulong utf, bool reverse);
-  static uchar petToAscii(uchar pet, ulong &utf, bool &reverse);
+  void getVariableNames(std::vector<std::string> &names,
+                        std::vector<std::string> &arrayNames) const;
 
-  static uchar decodeEmbedded(uchar c);
+  virtual void notifyVariablesChanged() { }
+
+  //---
+
+  static CPetsciChar drawCharToPet(const CPetDrawChar &drawChar);
+  static CPetDrawChar petToDrawChar(const CPetsciChar &pet);
+
+#if 0
+  static CPetsciChar decodeEmbedded(CAsciiChar c);
+#endif
   static std::string decodeEmbeddedStr(const std::string &s);
   static std::string decodeEmbeddedChar(uchar c);
 
@@ -599,6 +699,7 @@ class CPetBasic {
   bool clrStatement    (TokenList &tokenList);
   bool contStatement   (TokenList &tokenList);
   bool dataStatement   (const std::string &str);
+  bool delayStatement  (TokenList &tokenList);
   bool dimStatement    (TokenList &tokenList);
   bool endStatement    (TokenList &tokenList);
   bool forStatement    (uint lineNum, TokenList &tokenList);
@@ -635,20 +736,16 @@ class CPetBasic {
   void initRunData();
   void initRunState();
 
-  bool contRun();
-
   void setLineInd(int ind);
 
   //---
 
+ public:
   virtual void printString(const std::string &s) const;
-
-  virtual std::string getString(const std::string &prompt) const;
-
-  virtual char getChar() const;
 
   //---
 
+ private:
   CExprValuePtr evalExpr(const Tokens &tokens) const;
   CExprValuePtr evalExpr(const std::string &str) const;
 
@@ -712,6 +809,14 @@ class CPetBasic {
   LineInds lineInds_;
   int      lineInd_ { -1 };
 
+  int breakLineNum_ { -1 };
+
+  //---
+
+  CPetBasicTerm *term_ { nullptr };
+
+  //---
+
   ExprP expr_;
 
   //---
@@ -722,7 +827,9 @@ class CPetBasic {
   LineStack lineStack_;
   ForDatas  forDatas_;
 
-  bool stopped_ = false;
+  bool stopped_ { false };
+  bool reverse_ { false };
+  bool shift_   { false };
 
   mutable std::string errorMsg_;
 
@@ -737,6 +844,12 @@ class CPetBasic {
   uint nc_ { 40 };
 
   Memory memory_;
+
+  //---
+
+  using VariableNames = std::set<std::string>;
+
+  VariableNames variableNames_;
 
   //---
 

@@ -10,7 +10,6 @@
 #include <CQUtil.h>
 
 #include <QApplication>
-#include <QEventLoop>
 
 CQPetBasicApp::
 CQPetBasicApp(QWidget *parent) :
@@ -27,48 +26,64 @@ CQPetBasicApp(QWidget *parent) :
 
   //---
 
-  // add pet output terminal
-  term_ = new CQPetBasicTerm(this);
-
-  topLayout->addWidget(term_);
+  // create basic class
+  basic_ = new CQPetBasic(this);
 
   //---
+
+  // add pet output terminal
+  auto *termFrame  = CQUtil::makeWidget<QFrame>(this, "topFrame");
+  auto *termLayout = CQUtil::makeLayout<QVBoxLayout>(termFrame, 2, 2);
+
+  topLayout->addWidget(termFrame);
+
+  term_ = new CQPetBasicTerm(this);
+
+  term_->init();
+
+  basic_->setTerm(term_);
+
+  termLayout->addWidget(term_);
+  termLayout->addStretch(1);
+
+  //---
+
+  debugTab_ = CQUtil::makeWidget<QTabWidget>(this, "debugTab");
+
+  topLayout->addWidget(debugTab_);
 
   // add debug window
   dbg_ = new CQPetBasicDbg(term_->basic());
 
-  topLayout->addWidget(dbg_);
+  debugTab_->addTab(dbg_, "Source");
 
   variables_ = new CQPetBasicVariables(this);
 
-  topLayout->addWidget(variables_);
+  debugTab_->addTab(variables_, "Variables");
 
-  //---
-
-  auto *tab = CQUtil::makeWidget<QTabWidget>(this, "tab");
-
-  layout->addWidget(tab);
+  debugTab_->setVisible(false);
 
   //---
 
   // add keyword
   keyboard_ = new CQPetBasicKeyboard(this);
 
-  tab->addTab(keyboard_, "Keyboard");
+  layout->addWidget(keyboard_);
+
+  keyboard_->setVisible(false);
 
   //---
 
   // add console
   command_ = new CQPetBasicCommandScroll(this);
 
+  command_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
   command_->init();
 
-  connect(command_, SIGNAL(executeCommand(const QString &)),
-          this, SLOT(executeCommand(const QString &)));
-  connect(command_, SIGNAL(keyPress(const QString &)),
-          this, SLOT(keyPress(const QString &)));
+  layout->addWidget(command_);
 
-  tab->addTab(command_, "Console");
+  command_->setVisible(false);
 
   //---
 
@@ -78,85 +93,46 @@ CQPetBasicApp(QWidget *parent) :
   layout->addWidget(status_);
 }
 
-CQPetBasic *
+bool
 CQPetBasicApp::
-basic() const
+isKeyboardVisible() const
 {
-  return term_->basic();
+  return keyboard_->isVisible();
 }
 
 void
 CQPetBasicApp::
-executeCommand(const QString &cmd)
+setKeyboardVisible(bool b)
 {
-  if (looping_) {
-    looping_  = false;
+  keyboard_->setVisible(b);
+}
 
-    if (! loopChar_) {
-      loopStr_ = cmd;
-      loopC_   = '\0';
-    }
-    else {
-      loopStr_ = "";
-      loopC_   = (cmd.length() ? cmd[0].toLatin1() : '\0');
-
-      loopChar_ = false;
-    }
-
-    loop_->exit(0);
-  }
-  else {
-    auto *basic = this->basic();
-
-    basic->inputLine(cmd.toStdString());
-  }
+bool
+CQPetBasicApp::
+isConsoleVisible() const
+{
+  return command_->isVisible();
 }
 
 void
 CQPetBasicApp::
-keyPress(const QString &str)
+setConsoleVisible(bool b)
 {
-  if (looping_ & loopChar_) {
-    command_->command()->clearEntry();
-
-    looping_  = false;
-    loopStr_  = "";
-    loopC_    = (str.length() ? str[0].toLatin1() : '\0');
-
-    loopChar_ = false;
-
-    loop_->exit(0);
-  }
+  command_->setVisible(b);
 }
 
-QString
+bool
 CQPetBasicApp::
-getString()
+isDebugVisible() const
 {
-  if (! loop_)
-    loop_ = new QEventLoop;
-
-  looping_  = true;
-  loopChar_ = false;
-
-  loop_->exec();
-
-  return loopStr_;
+  return debugTab_->isVisible();
 }
 
-uchar
+void
 CQPetBasicApp::
-getChar()
+setDebugVisible(bool b)
 {
-  if (! loop_)
-    loop_ = new QEventLoop;
-
-  looping_  = true;
-  loopChar_ = true;
-
-  loop_->exec();
-
-  return loopC_;
+  debugTab_->setVisible(b);
 }
 
 void
@@ -170,6 +146,14 @@ setStatusMsg(const QString &msg)
 
 void
 CQPetBasicApp::
+updateInterface()
+{
+  // called when reverse changed
+  keyboard_->update();
+}
+
+void
+CQPetBasicApp::
 notifyLinesChanged()
 {
   dbg_->file()->update();
@@ -179,7 +163,16 @@ void
 CQPetBasicApp::
 notifyLineNumChanged()
 {
+  dbg_->scrollVisible();
+
   dbg_->file()->update();
+}
+
+void
+CQPetBasicApp::
+notifyVariablesChanged()
+{
+  variables_->reload();
 }
 
 void

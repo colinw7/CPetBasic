@@ -1,25 +1,19 @@
 #include <CPetBasic.h>
+#include <CPetBasicTerm.h>
+#include <CPetBasicRawTerm.h>
+#include <CPetBasicUtil.h>
 #include <CFileParse.h>
 #include <CStrParse.h>
 #include <CExpr.h>
 #include <CReadLine.h>
 #include <COSRand.h>
+#include <COSRead.h>
 
 #include <algorithm>
 #include <cmath>
 #include <sstream>
-
-namespace {
-
-std::string toUpper(const std::string &str) {
-  auto ustr = str;
-  for (auto &c : ustr) c = char(toupper(c));
-  return ustr;
-}
-
-}
-
-//---
+#include <termios.h>
+#include <unistd.h>
 
 class CPetBasicExpr : public CExpr {
  public:
@@ -114,7 +108,9 @@ class CPetBasicAscFunction : public CPetBasicFunction {
     if (! values[0]->getStringValue(s))
       return errorMsg("Wrong argument type");
 
-    auto l = long(s[0]);
+    uchar c(s[0]);
+
+    auto l = long(c);
 
     return expr_->createIntegerValue(l);
   }
@@ -303,9 +299,6 @@ class CPetBasicPeekFunction : public CPetBasicFunction {
 
     if (addr < 0 || addr >= 65536)
       return errorMsg("Invalid address");
-
-    if (addr == 0)
-      basic_->delay();
 
     auto value = basic_->getMemory(uint(addr) & 0xFFFF);
 
@@ -599,11 +592,16 @@ CPetBasic()
   expr_->createUserVariable("TI"    , new CPetBasicTIVar    (this));
 //expr_->createUserVariable("TI$"   , new CPetBasicTISVar   (this));
 //expr_->createUserVariable("STATUS", new CPetBasicStatusVar(this));
+
+  term_ = new CPetBasicTerm(this);
+
+  term_->init();
 }
 
 CPetBasic::
 ~CPetBasic()
 {
+  delete term_;
 }
 
 bool
@@ -670,6 +668,8 @@ loadFile(const std::string &fileName)
   }
 
   runDataValid_ = false;
+
+  initRunData();
 
   notifyLinesChanged();
 
@@ -869,7 +869,7 @@ parseLine(const std::string &line, uint lineNum, Tokens &tokens) const
       parse.skipChar();
 
       while (! parse.eof()) {
-        if (parse.isChar('\\')) {
+        if      (parse.isChar('\\')) {
           parse.skipChar();
 
           if (! parse.eof())
@@ -912,7 +912,9 @@ parseLine(const std::string &line, uint lineNum, Tokens &tokens) const
             break;
           }
 
-          tokenStr += parse.readChar();
+          auto c = parse.readChar();
+
+          tokenStr += char(c);
         }
       }
 
@@ -1067,20 +1069,16 @@ replaceEmbedded(const std::string &str1, std::string &str2) const
 
   bool rc = true;
 
+  // values are pet chars when in string (other string chars are ascii)
+  // reverse in string uses separate char so no characters in string are reversed)
   if      (str1 == "HOM") { // 19 (octal 23)
     str2 += encodeEmbedded("HOM");
   }
   else if (str1 == "CLS") { // 147 (octal 223)
     str2 += encodeEmbedded("CLS");
   }
-  else if (str1 == "STP") { // 3 (octal 3)
-    str2 += encodeEmbedded("STP");
-  }
   else if (str1 == "PI") { // 255 (octal 377)
     str2 += encodeEmbedded("PI");
-  }
-  else if (str1 == "INS") { // 148 (octal 224)
-    str2 += encodeEmbedded("INS");
   }
   else if (str1 == "REV") { // 18 (octal 22)
     str2 += encodeEmbedded("REV");
@@ -1135,79 +1133,92 @@ CPetBasic::
 encodeEmbedded(const std::string &name) const
 {
   if (isEmbeddedEscapes()) {
-    if      (name == "HOM"   ) return "\033[0,0H";
-    else if (name == "CLS"   ) return "\033[2]";
-    else if (name == "STP"   ) return ""; // TODO
-    else if (name == "PI"    ) return "π";
-    else if (name == "INS"   ) return ""; // TODO
-    else if (name == "REV"   ) return "\033[7m";
-    else if (name == "OFF"   ) return "\033[0m";
-    else if (name == "CU"    ) return "\033[A";
-    else if (name == "CD"    ) return "\033[B";
-    else if (name == "CL"    ) return "\033[D";
-    else if (name == "CR"    ) return "\033[C";
-    else if (name == "^SPC"  ) return " ";
+    if      (name == "HOM" ) return "\033[0,0H";
+    else if (name == "CLS" ) return "\033[2]";
+    else if (name == "PI"  ) return "π";
+    else if (name == "REV" ) return "\033[7m";
+    else if (name == "OFF" ) return "\033[0m";
+    else if (name == "CU"  ) return "\033[A";
+    else if (name == "CD"  ) return "\033[B";
+    else if (name == "CL"  ) return "\033[D";
+    else if (name == "CR"  ) return "\033[C";
+    else if (name == "^SPC") return " ";
+
     else if (name.size() == 1) return name;
   }
   else {
     uchar c { 0 };
 
-    if      (name == "HOM"   ) c = '\001';
-    else if (name == "CLS"   ) c = '\002';
-    else if (name == "STP"   ) c = '\003';
-    else if (name == "PI"    ) c = '\004';
-    else if (name == "INS"   ) c = '\005';
-    else if (name == "REV"   ) c = '\006';
-    else if (name == "OFF"   ) c = '\007';
-    else if (name == "CU"    ) c = '\020';
-    else if (name == "CD"    ) c = '\021';
-    else if (name == "CL"    ) c = '\022';
-    else if (name == "CR"    ) c = '\023';
-    else if (name == "^SPC"  ) c = '\024';
-    else if (name.size() == 1) c = 128 + (uchar(name[0]) & 0x7f);
+    if      (name == "HOM" ) c = 19;
+    else if (name == "CLS" ) c = 147;
+    else if (name == "PI"  ) c = 255;
+    else if (name == "REV" ) c = 18;
+    else if (name == "OFF" ) c = 146;
+    else if (name == "CU"  ) c = 145;
+    else if (name == "CD"  ) c = 17;
+    else if (name == "CL"  ) c = 157;
+    else if (name == "CR"  ) c = 29;
+    else if (name == "^SPC") c = 160;
+
+    else if (name.size() == 1) {
+      CPetDrawChar drawChar(name[0]);
+
+      auto pet = drawCharToPet(drawChar);
+
+      pet.shift();
+
+      c = pet.c();
+    }
+
     std::string s = " ";
     s[0] = c;
+
     return s;
   }
+
   std::cerr << "Invalid embedded code '" << name << "'\n";
+
   return "";
 }
 
-uchar
+#if 0
+CPetsciChar
 CPetBasic::
-decodeEmbedded(uchar c)
+decodeEmbedded(CAsciiChar c)
 {
-  if (c < 128) {
-    switch (c) {
-      case '\001': return 23;
-      case '\002': return 147;
-      case '\003': return 3;
-      case '\004': return 255;
-      case '\005': return 148;
-      case '\006': return 18;
-      case '\007': return 146;
-      case '\020': return 145;
-      case '\021': return 17;
-      case '\022': return 157;
-      case '\023': return 29;
-      case '\024': return 160;
-      default:
-        std::cerr << "Invalid embedded char '" << int(c) << "'\n";
-        break;
-    }
-
-    return 0;
+  switch (c.c()) {
+    case  19: return CPetsciChar(c.c()); // HOM
+    case 147: return CPetsciChar(c.c()); // CLS
+    case 255: return CPetsciChar(c.c()); // PI
+    case  18: return CPetsciChar(c.c()); // REV
+    case 146: return CPetsciChar(c.c()); // OFF
+    case 145: return CPetsciChar(c.c()); // CU
+    case  17: return CPetsciChar(c.c()); // CD
+    case 157: return CPetsciChar(c.c()); // CL
+    case  29: return CPetsciChar(c.c()); // CR
+    case 160: return CPetsciChar(c.c()); // ^SPC
+    default:
+      std::cerr << "Invalid embedded char '" << int(c.c()) << "'\n";
+      break;
   }
-  else {
-    uchar c1 = c - 128;
 
-    auto pet = asciiToPet(c1, 0, /*reverse*/false);
+  uchar c1 = c.c();
 
-    pet += 64;
+  bool shift = (c1 >= 128);
 
-    return pet;
-  }
+  if (shift)
+    c1 -= 128;
+
+  CPetDrawChar drawChar(c1);
+
+  auto pet = drawCharToPet(drawChar);
+
+  if (shift)
+    pet.shift();
+
+  return pet;
 }
+#endif
 
 std::string
 CPetBasic::
@@ -1218,11 +1229,7 @@ decodeEmbeddedStr(const std::string &s)
   for (const auto &c : s) {
     auto c1 = uchar(c);
 
-    if (c1 < 8 || (c1 >= 16 && c1 < 20) || c1 >= 128) {
-      s1 += decodeEmbeddedChar(c1);
-    }
-    else
-     s1 += c;
+    s1 += decodeEmbeddedChar(c1);
   }
 
   return s1;
@@ -1232,32 +1239,33 @@ std::string
 CPetBasic::
 decodeEmbeddedChar(uchar c)
 {
-  if (c < 128) {
-    switch (c) {
-      case '\001': return "{HOME}";
-      case '\002': return "{CLS}";
-      case '\003': return "{STP}";
-      case '\004': return "{PI}";
-      case '\005': return "{INS}";
-      case '\006': return "{REV}";
-      case '\007': return "{OFF}";
-      case '\020': return "{CU}";
-      case '\021': return "{CD}";
-      case '\022': return "{CL}";
-      case '\023': return "{CR}";
-      case '\024': return "{^SPC}";
-      default:
-        std::cerr << "Invalid embedded char '" << int(c) << "'\n";
-        break;
-    }
-
-    return "";
+  switch (c) {
+    case  19: return "{HOM}";
+    case 147: return "{CLS}";
+    case 255: return "{PI}";
+    case  18: return "{REV}";
+    case 146: return "{OFF}";
+    case 145: return "{CU}";
+    case  17: return "{CD}";
+    case 157: return "{CL}";
+    case  29: return "{CR}";
+    case 160: return "{^SPC}";
+    default:
+      std::cerr << "Invalid embedded char '" << int(c) << "'\n";
+      break;
   }
-  else {
-    char c1 = char(c - 128);
 
+  bool shift = (c >= 128);
+
+  if (shift)
+    c -= 128;
+
+  char c1(c);
+
+  if (shift)
     return "{^" + std::string(&c1, 1) + "}";
-  }
+  else
+    return std::string(&c1, 1);
 }
 
 //---
@@ -1284,7 +1292,7 @@ CPetBasic::KeywordType
 CPetBasic::
 lookupKeyword(const std::string &str) const
 {
-  auto ustr = toUpper(str);
+  auto ustr = CPetBasicUtil::toUpper(str);
 
   initKeywords();
 
@@ -1330,6 +1338,7 @@ initKeywords() const
     addKeyword(KeywordType::DATA     , "DATA"     );
 //  addKeyword(KeywordType::DCLOSE   , "DCLOSE"   );
 //  addKeyword(KeywordType::DEF      , "DEF"      );
+    addKeyword(KeywordType::DELAY    , "DELAY"    );
     addKeyword(KeywordType::DIM      , "DIM"      );
 //  addKeyword(KeywordType::DIRECTORY, "DIRECTORY");
 //  addKeyword(KeywordType::DLOAD    , "DLOAD"    );
@@ -1385,11 +1394,24 @@ CPetBasic::
 listLine(const LineData &lineData) const
 {
   if (lineData.lineN > 0)
-    std::cout << lineData.lineN << " ";
+    printString(std::to_string(lineData.lineN) + " ");
 
   auto str = lineToString(lineData, isListHighlight());
 
-  std::cout << str << "\n";
+  printString(str + "\n");
+}
+
+const CPetBasic::LineData *
+CPetBasic::
+getLineIndData(uint lineInd) const
+{
+  int lineNum = lineIndNum(int(lineInd));
+  if (lineNum < 0) return nullptr;
+
+  auto p = lines_.find(lineNum);
+  if (p == lines_.end()) return nullptr;
+
+  return &(*p).second;
 }
 
 std::string
@@ -1496,6 +1518,8 @@ run()
 
   setLineInd(0);
 
+  breakLineNum_ = -1;
+
   return contRun();
 }
 
@@ -1504,6 +1528,8 @@ CPetBasic::
 step()
 {
   initRunData();
+
+  breakLineNum_ = -1;
 
   stopped_ = true;
 
@@ -1551,19 +1577,47 @@ int
 CPetBasic::
 currentLineNum() const
 {
-  if (lineInd_ < 0 || uint(lineInd_) >= lineNums_.size())
+  return lineIndNum(lineInd_);
+}
+
+int
+CPetBasic::
+lineIndNum(int lineInd) const
+{
+  if (lineInd < 0 || uint(lineInd) >= lineNums_.size())
     return -1;
 
-  return lineNums_[lineInd_];
+  return lineNums_[lineInd];
+}
+
+bool
+CPetBasic::
+contRunTo(uint lineNum)
+{
+  initRunData();
+
+  if (int(lineNum) > currentLineNum())
+    breakLineNum_ = int(lineNum);
+  else
+    breakLineNum_ = -1;
+
+  return contRun();
 }
 
 bool
 CPetBasic::
 contRun()
 {
+  initRunData();
+
   auto lineNum = currentLineNum();
 
   while (lineNum > 0) {
+    if (lineNum == breakLineNum_) {
+      setStopped(true);
+      break;
+    }
+
     auto pl = lines_.find(lineNum);
     assert(pl != lines_.end());
 
@@ -1586,47 +1640,28 @@ contRun()
   return true;
 }
 
+//---
+
+void
+CPetBasic::
+setRaw(bool b)
+{
+  delete term_;
+
+  term_ = new CPetBasicRawTerm(this);
+
+  term_->init();
+
+  setReplaceEmbedded(b);
+}
+
+//---
+
 void
 CPetBasic::
 loop()
 {
-  CReadLine   readline;
-  std::string lineBuffer;
-
-  auto setPrompt = [&](bool ext=false) {
-    readline.setPrompt(ext ? "pet+> " : "pet> ");
-  };
-
-  setPrompt();
-
-  auto line = readline.readLine();
-
-  while (! readline.eof()) {
-    auto len = line.size();
-
-    if (len > 0 && line[len - 1] == '\\') {
-      setPrompt(true);
-
-      lineBuffer += line.substr(0, len - 1);
-    }
-    else {
-      lineBuffer += line;
-
-      if (lineBuffer == "")
-        break;
-
-      (void) inputLine(lineBuffer);
-
-      lineBuffer = "";
-
-      setPrompt();
-
-      if (isStopped())
-        break;
-    }
-
-    line = readline.readLine();
-  }
+  term_->loop();
 }
 
 bool
@@ -1722,6 +1757,9 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
         break;
       case KeywordType::DATA:
         rc = dataStatement(token->str());
+        break;
+      case KeywordType::DELAY:
+        rc = delayStatement(tokenList);
         break;
       case KeywordType::DIM:
         rc = dimStatement(tokenList);
@@ -1894,6 +1932,29 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
 
 void
 CPetBasic::
+setReverse(bool b)
+{
+  reverse_ = b;
+}
+
+void
+CPetBasic::
+setShift(bool b)
+{
+  shift_ = b;
+}
+
+void
+CPetBasic::
+setStopped(bool b)
+{
+  stopped_ = b;
+}
+
+//---
+
+void
+CPetBasic::
 resize(uint nr, uint nc)
 {
   nr_ = nr;
@@ -1938,6 +1999,32 @@ setMemory(uint addr, uchar value)
 
     setScreenMemory(r, c, value);
   }
+}
+
+bool
+CPetBasic::
+getScreenMemory(uint r, uint c, uchar &petsci) const
+{
+  // screen memory is ascii, need to return petsci
+  auto drawChar = term_->getChar(r, c);
+
+  auto pet = drawCharToPet(drawChar);
+
+  petsci = pet.c();
+
+  return true;
+}
+
+void
+CPetBasic::
+setScreenMemory(uint r, uint c, uchar petsci)
+{
+  // value is in petsci, screen memory is ascii
+  auto drawChar = petToDrawChar(CPetsciChar(petsci));
+
+  term_->setChar(r, c, drawChar);
+
+  term_->update();
 }
 
 //---
@@ -2089,9 +2176,13 @@ clrStatement(TokenList &tokenList)
   if (tokenList.atEnd())
     return errorMsg("Extra tokens");
 
+  variableNames_.clear();
+
   clearArrayVariables();
 
   expr_ = std::make_unique<CPetBasicExpr>(this);
+
+  notifyVariablesChanged();
 
   return true;
 }
@@ -2116,6 +2207,31 @@ bool
 CPetBasic::
 dataStatement(const std::string &)
 {
+  return true;
+}
+
+bool
+CPetBasic::
+delayStatement(TokenList &tokenList)
+{
+  Tokens exprTokens;
+
+  auto *token = tokenList.nextToken();
+
+  while (token) {
+    exprTokens.push_back(token);
+
+    token = tokenList.nextToken();
+  }
+
+  auto val = evalExpr(exprTokens);
+
+  long i;
+  if (! val->getIntegerValue(i))
+    return errorMsg("Invalid DELAY expression");
+
+  term_->delay(i);
+
   return true;
 }
 
@@ -2344,7 +2460,7 @@ getStatement(TokenList &tokenList)
   else if (token->type() != TokenType::SEPARATOR)
     return errorMsg("Invalid GET token '" + token->str() + "'");
 
-  auto c = getChar();
+  auto c = term_->readChar();
 
   std::string s;
   if (c) { s += c; }
@@ -2429,7 +2545,7 @@ inputStatement(TokenList &tokenList)
   }
 
   for (const auto &varName : varNames) {
-    auto line = getString(prompt);
+    auto line = term_->readString(prompt);
 
     auto val = expr_->createStringValue(line);
 
@@ -2719,15 +2835,13 @@ CPetBasic::
 printStatement(TokenList &tokenList)
 {
   // , next tab stop (10), ; next pos
-  int numOut = 0;
-
   enum class Spacer {
     NONE,
     COMMA,
     SEMI_COLON
   };
 
-  Spacer nextSpacer { Spacer::SEMI_COLON };
+  Spacer nextSpacer { Spacer::NONE };
 
   while (true) {
     auto spacer = nextSpacer;
@@ -2763,19 +2877,24 @@ printStatement(TokenList &tokenList)
       token = tokenList.nextToken();
     }
 
+    //---
+
+    if (spacer == Spacer::COMMA)
+      printString("\t");
+
     auto value = evalExpr(tokens1);
+
+    if (value->isIntegerValue() || value->isRealValue()) {
+      double r;
+
+      if (value->getRealValue(r) && r >= 0)
+        printString(" ");
+    }
 
     std::string s;
     (void) value->getStringValue(s);
 
-    if      (spacer == Spacer::COMMA)
-      printString("\t");
-    else if (spacer == Spacer::SEMI_COLON)
-      printString(" ");
-
     printString(s);
-
-    ++numOut;
   }
 
   printString("\n");
@@ -2863,8 +2982,11 @@ returnStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-runStatement(TokenList &)
+runStatement(TokenList &tokenList)
 {
+  if (! tokenList.atEnd())
+    return errorMsg("Extra arguments ");
+
   run();
 
   return true;
@@ -3029,35 +3151,99 @@ setLineInd(int ind)
 
 void
 CPetBasic::
-printString(const std::string &s) const
+printString(const std::string &str) const
 {
+#if 1
+  auto *th = const_cast<CPetBasic *>(this);
+
+  // ASCII with embedded escape codes for special chars
+  uint i   = 0;
+  auto len = str.length();
+
+  //---
+
+  while (i < len) {
+    auto c  = str[i];
+    auto c1 = uchar(c);
+
+    // handle new line
+    if      (c == '\n') {
+      term_->enter();
+    }
+
+    // handle tab
+    else if (c == '\t') {
+      term_->tab();
+    }
+
+    else {
+      // handle embedded escape codes
+      bool handled = true;
+
+      switch (c1) {
+        case  19: term_->home(); break;
+        case 147: term_->clear(); break;
+        case 255: th->setStopped(true); break;
+        case  18: th->setReverse(true); break;
+        case 146: th->setReverse(false); break;
+        case 145: term_->cursorUp(); break;
+        case  17: term_->cursorDown(); break;
+        case 157: term_->cursorLeft(); break;
+        case  29: term_->cursorRight(); break;
+        default: handled = false; break;
+      }
+
+      if (! handled && c1 >= 128) {
+        c1 -= 128;
+
+        CPetDrawChar drawChar(c1);
+
+        auto pet = CPetBasic::drawCharToPet(drawChar);
+
+        pet.shift();
+
+        drawChar = CPetBasic::petToDrawChar(pet);
+
+        drawChar.setReverse(isReverse());
+
+        term_->drawChar(drawChar);
+
+        term_->cursorRight(/*nl*/false);
+
+        handled = true;
+      }
+
+      // handle normal char
+      if (! handled) {
+        // map to upper case
+        if (islower(c))
+          c = char(toupper(c));
+
+        if (term_->drawChar(c))
+          term_->cursorRight(/*nl*/false);
+      }
+    }
+
+    ++i;
+  }
+
+  term_->update();
+#else
   for (const auto &c : s) {
     std::cout << c;
   }
+#endif
 }
 
-char
+//---
+
+void
 CPetBasic::
-getChar() const
+setTerm(CPetBasicTerm *term)
 {
-  CReadLine readline;
+  delete term_;
 
-  readline.setPrompt("? ");
-
-  auto line = toUpper(readline.readLine());
-
-  return (line.size() ? line[0] : '\0');
-}
-
-std::string
-CPetBasic::
-getString(const std::string &prompt) const
-{
-  CReadLine readline;
-
-  readline.setPrompt(prompt != "" ? prompt + " ? " : "? ");
-
-  return readline.readLine();
+  term_ = term;
 }
 
 //---
@@ -3125,51 +3311,59 @@ evalExpr(const std::string &str) const
 
 //---
 
-void
+CExprVariablePtr
 CPetBasic::
-dimVariable(const std::string &name, const Inds &inds)
+addVariable(const std::string &name, const CExprValuePtr &value)
 {
-  auto uname = toUpper(name);
+  auto var = expr_->createVariable(name, value);
 
-  //std::cerr << "dimVariable: " << uname << " "; printInds(inds); std::cerr << "\n";
+  variableNames_.insert(name);
 
-  auto *th = const_cast<CPetBasic *>(this);
+  notifyVariablesChanged();
 
-  if (! hasArrayVariable(uname))
-    th->addArrayVariable(uname);
+  return var;
+}
 
-  auto pv = th->arrayVariables_.find(uname);
-  assert(pv != th->arrayVariables_.end());
+CExprVariablePtr
+CPetBasic::
+getVariable(const std::string &name) const
+{
+  auto uname = CPetBasicUtil::toUpper(name);
 
-  return (*pv).second.resize(inds);
+  auto var = expr_->getVariable(uname);
+
+  if (! var) {
+    auto valueType = expr_->nameType(uname);
+
+    CExprValuePtr val;
+
+    if      (valueType == CExprValueType::INTEGER)
+      val = expr_->createIntegerValue(0);
+    else if (valueType == CExprValueType::STRING)
+      val = expr_->createStringValue("");
+    else
+      val = expr_->createRealValue(0.0);
+
+    auto *th = const_cast<CPetBasic *>(this);
+
+    var = th->addVariable(uname, val);
+  }
+
+  return var;
 }
 
 CExprValuePtr
 CPetBasic::
-getVariableValue(const std::string &name, const Inds &inds)
+getVariableValue(const std::string &name) const
 {
-  auto uname = toUpper(name);
-
-  //std::cerr << "getVariableValue: " << uname << " "; printInds(inds); std::cerr << "\n";
-
-  auto *th = const_cast<CPetBasic *>(this);
-
-  if (! hasArrayVariable(uname))
-    th->addArrayVariable(uname);
-
-  auto pv = th->arrayVariables_.find(uname);
-  assert(pv != th->arrayVariables_.end());
-
-//std::cerr << uname << " " << inds.size() << "\n";
-
-  return (*pv).second.value(inds);
+  return getVariable(name)->value();
 }
 
 bool
 CPetBasic::
 setVariableValue(const std::string &name, const CExprValuePtr &value)
 {
-  auto uname = toUpper(name);
+  auto uname = CPetBasicUtil::toUpper(name);
 
   auto valueType = expr_->nameType(uname);
 
@@ -3194,19 +3388,91 @@ setVariableValue(const std::string &name, const CExprValuePtr &value)
 
   auto var = getVariable(uname);
 
-  if (! var)
-    var = expr_->createVariable(uname, val);
-  else
+  if (! var) {
+    var = addVariable(uname, val);
+  }
+  else {
     var->setValue(val);
 
+    notifyVariablesChanged();
+  }
+
   return true;
+}
+
+//---
+
+void
+CPetBasic::
+dimVariable(const std::string &name, const Inds &inds)
+{
+  auto uname = CPetBasicUtil::toUpper(name);
+
+  //std::cerr << "dimVariable: " << uname << " "; printInds(inds); std::cerr << "\n";
+
+  auto *th = const_cast<CPetBasic *>(this);
+
+  if (! hasArrayVariable(uname))
+    th->addArrayVariable(uname);
+
+  auto pv = th->arrayVariables_.find(uname);
+  assert(pv != th->arrayVariables_.end());
+
+  return (*pv).second.resize(inds);
+}
+
+bool
+CPetBasic::
+hasArrayVariable(const std::string &uname) const
+{
+  assert(uname == CPetBasicUtil::toUpper(uname));
+
+  auto pv = arrayVariables_.find(uname);
+
+  return (pv != arrayVariables_.end());
+}
+
+void
+CPetBasic::
+addArrayVariable(const std::string &uname)
+{
+  assert(uname == CPetBasicUtil::toUpper(uname));
+
+  ArrayData arrayData;
+
+  arrayData.resize(10);
+
+  arrayVariables_[uname] = arrayData;
+
+  notifyVariablesChanged();
+}
+
+CExprValuePtr
+CPetBasic::
+getVariableValue(const std::string &name, const Inds &inds)
+{
+  auto uname = CPetBasicUtil::toUpper(name);
+
+  //std::cerr << "getVariableValue: " << uname << " "; printInds(inds); std::cerr << "\n";
+
+  auto *th = const_cast<CPetBasic *>(this);
+
+  if (! hasArrayVariable(uname))
+    th->addArrayVariable(uname);
+
+  auto pv = th->arrayVariables_.find(uname);
+  assert(pv != th->arrayVariables_.end());
+
+//std::cerr << uname << " " << inds.size() << "\n";
+
+  return (*pv).second.value(inds);
 }
 
 bool
 CPetBasic::
 setVariableValue(const std::string &name, const Inds &inds, const CExprValuePtr &value)
 {
-  auto uname = toUpper(name);
+  auto uname = CPetBasicUtil::toUpper(name);
 
   //std::cerr << "setVariableValue: " << uname << " "; printInds(inds); std::cerr << "\n";
 
@@ -3218,57 +3484,11 @@ setVariableValue(const std::string &name, const Inds &inds, const CExprValuePtr 
   auto pv = th->arrayVariables_.find(uname);
   assert(pv != th->arrayVariables_.end());
 
-  return (*pv).second.setValue(inds, value);
-}
+  bool rc = (*pv).second.setValue(inds, value);
 
-CExprVariablePtr
-CPetBasic::
-getVariable(const std::string &name) const
-{
-  auto uname = toUpper(name);
+  notifyVariablesChanged();
 
-  auto var = expr_->getVariable(uname);
-
-  if (! var) {
-    auto valueType = expr_->nameType(uname);
-
-    CExprValuePtr val;
-
-    if      (valueType == CExprValueType::INTEGER)
-      val = expr_->createIntegerValue(0);
-    else if (valueType == CExprValueType::STRING)
-      val = expr_->createStringValue("");
-    else
-      val = expr_->createRealValue(0.0);
-
-    var = expr_->createVariable(uname, val);
-  }
-
-  return var;
-}
-
-bool
-CPetBasic::
-hasArrayVariable(const std::string &uname) const
-{
-  assert(uname == toUpper(uname));
-
-  auto pv = arrayVariables_.find(uname);
-
-  return (pv != arrayVariables_.end());
-}
-
-void
-CPetBasic::
-addArrayVariable(const std::string &uname)
-{
-  assert(uname == toUpper(uname));
-
-  ArrayData arrayData;
-
-  arrayData.resize(10);
-
-  arrayVariables_[uname] = arrayData;
+  return rc;
 }
 
 void
@@ -3276,6 +3496,17 @@ CPetBasic::
 clearArrayVariables()
 {
   arrayVariables_.clear();
+}
+
+void
+CPetBasic::
+getVariableNames(std::vector<std::string> &names, std::vector<std::string> &arrayNames) const
+{
+  for (const auto &name : variableNames_)
+    names.push_back(name);
+
+  for (const auto &pa : arrayVariables_)
+    arrayNames.push_back(pa.first);
 }
 
 //---
@@ -3320,14 +3551,14 @@ errorMsg(const std::string &msg) const
 
 //---
 
-uchar
+CPetsciChar
 CPetBasic::
-asciiToPet(uchar ascii, ulong utf, bool reverse)
+drawCharToPet(const CPetDrawChar &drawChar)
 {
-  uchar offset = (reverse ? 128 : 0);
+  CPetsciChar pet;
 
-  if (utf > 0) {
-    auto utfToPet1 = [](ulong utf1) -> uchar {
+  if (drawChar.utf() > 0) {
+    auto utfToPet = [](ulong utf1) -> uchar {
       switch (utf1) {
         case 0x1fb79: return 64 ; // horizontal mid line
         case 0x2660 : return 65 ; // spades suit
@@ -3359,7 +3590,7 @@ asciiToPet(uchar ascii, ulong utf, bool reverse)
         case 0x253c : return 91 ; // plus
         case 0x1fb8c: return 92 ; // hash fill left half
         case 0x2502 : return 93 ; // vertical line 5
-        case 0x0360 : return 94 ; // pi
+        case 0x03c0 : return 94 ; // pi
         case 0x25e5 : return 95 ; // filled tr triangle
         case 0x00a0 : return 96 ; // space
         case 0x258c : return 97 ; // filled left side
@@ -3397,191 +3628,213 @@ asciiToPet(uchar ascii, ulong utf, bool reverse)
       }
     };
 
-    return utfToPet1(utf) + offset;
+    pet = CPetsciChar(utfToPet(drawChar.utf()));
+  }
+  else {
+    auto asciiToPet = [](uchar ascii1) -> uchar {
+      switch (ascii1) {
+        case '@': return 0;
+        case 'A': case 'B': case 'C': case 'D': case 'E': case 'F': case 'G': case 'H':
+        case 'I': case 'J': case 'K': case 'L': case 'M': case 'N': case 'O': case 'P':
+        case 'Q': case 'R': case 'S': case 'T': case 'U': case 'V': case 'W': case 'X':
+        case 'Y': case 'Z':
+          return (ascii1 - 'A' + 1);
+        case 'a': case 'b': case 'c': case 'd': case 'e': case 'f': case 'g': case 'h':
+        case 'i': case 'j': case 'k': case 'l': case 'm': case 'n': case 'o': case 'p':
+        case 'q': case 'r': case 's': case 't': case 'u': case 'v': case 'w': case 'x':
+        case 'y': case 'z':
+          return (ascii1 - 'a' + 1);
+        case '[': return 27;
+        case '\\': return 28;
+        case ']': return 29;
+        case '^': return 30; // up arrow
+        case '~': return 31; // back arrow
+        case ' ': return 32;
+        case '!': return 33;
+        case '"': return 34;
+        case '#': return 35;
+        case '$': return 36;
+        case '%': return 37;
+        case '&': return 38;
+        case '\'': return 39;
+        case '(': return 40;
+        case ')': return 41;
+        case '*': return 42;
+        case '+': return 43;
+        case ',': return 44;
+        case '-': return 45;
+        case '.': return 46;
+        case '/': return 47;
+        case '0': case '1': case '2': case '3': case '4':
+        case '5': case '6': case '7': case '8': case '9':
+          return (ascii1 - '0' + 48);
+        case ':': return 58;
+        case ';': return 59;
+        case '<': return 60;
+        case '=': return 61;
+        case '>': return 62;
+        case '?': return 63;
+        // 64-127 : graphic characters
+        default: return 32;
+      }
+    };
+
+    pet = CPetsciChar(asciiToPet(drawChar.c()));
   }
 
-  auto asciiToPet1 = [](uchar ascii1) -> uchar {
-    switch (ascii1) {
-      case '@': return 0;
-      case 'A': case 'B': case 'C': case 'D': case 'E': case 'F': case 'G': case 'H':
-      case 'I': case 'J': case 'K': case 'L': case 'M': case 'N': case 'O': case 'P':
-      case 'Q': case 'R': case 'S': case 'T': case 'U': case 'V': case 'W': case 'X':
-      case 'Y': case 'Z':
-        return (ascii1 - 'A' + 1);
-      case 'a': case 'b': case 'c': case 'd': case 'e': case 'f': case 'g': case 'h':
-      case 'i': case 'j': case 'k': case 'l': case 'm': case 'n': case 'o': case 'p':
-      case 'q': case 'r': case 's': case 't': case 'u': case 'v': case 'w': case 'x':
-      case 'y': case 'z':
-        return (ascii1 - 'a' + 1);
-      case '[': return 27;
-      case '\\': return 28;
-      case ']': return 29;
-      case '^': return 30; // up arrow
-      case '~': return 31; // back arrow
-      case ' ': return 32;
-      case '!': return 33;
-      case '"': return 34;
-      case '#': return 35;
-      case '$': return 36;
-      case '%': return 37;
-      case '&': return 38;
-      case '\'': return 39;
-      case '(': return 40;
-      case ')': return 41;
-      case '*': return 42;
-      case '+': return 43;
-      case ',': return 44;
-      case '-': return 45;
-      case '.': return 46;
-      case '/': return 47;
-      case '0': case '1': case '2': case '3': case '4':
-      case '5': case '6': case '7': case '8': case '9':
-        return (ascii1 - '0' + 48);
-      case ':': return 58;
-      case ';': return 59;
-      case '<': return 60;
-      case '=': return 61;
-      case '>': return 62;
-      case '?': return 63;
-      // 64-127 : graphic characters
-      default: return 32;
-    }
-  };
+  if (drawChar.isReverse())
+    pet.reverse();
 
-  return asciiToPet1(ascii) + offset;
+  return pet;
 }
 
-uchar
+CPetDrawChar
 CPetBasic::
-petToAscii(uchar pet, ulong &utf, bool &reverse)
+petToDrawChar(const CPetsciChar &pet)
 {
-  utf     = 0;
-  reverse = false;
+  CPetsciChar pet1 = pet;
 
-  if (pet >= 128) {
-    pet -= 128;
+  CPetDrawChar drawChar;
 
-    reverse = true;
+  if (pet1.isReversed()) {
+    pet1.unreverse();
+
+    drawChar.setReverse(true);
   }
 
-  if (pet >= 1 && pet <= 26)
-    return 'A' + pet - 1;
+  auto setC = [&](uchar c) {
+    drawChar.setC(c);
+    return drawChar;
+  };
 
-  if (pet >= 48 && pet <= 57)
-    return '0' + pet - 48;
+  // A-Z
+  if (pet1.c() >= 1 && pet1.c() <= 26)
+    return setC(uchar('A' + pet1.c() - 1));
+
+  // 0-9
+  if (pet1.c() >= 48 && pet1.c() <= 57)
+    return setC('0' + pet1.c() - 48);
 
   // 0-63 normal characters
-  if (pet < 64) {
-    switch (pet) {
-      case 0 : return '@';
+  if (pet1.c() < 64) {
+    switch (pet1.c()) {
+      case 0 : return setC('@');
       // A-Z (1-26)
-      case 27: return '[';
-      case 28: return '\\';
-      case 29: return ']';
-      case 30: return '^'; // up arrow
-      case 31: return '~'; // left arrow
-      case 32: return ' ';
-      case 33: return '!';
-      case 34: return '"';
-      case 35: return '#';
-      case 36: return '$';
-      case 37: return '%';
-      case 38: return '&';
-      case 39: return '\'';
-      case 40: return '(';
-      case 41: return ')';
-      case 42: return '*';
-      case 43: return '+';
-      case 44: return ',';
-      case 45: return '-';
-      case 46: return '.';
-      case 47: return '/';
+      case 27: return setC('[');
+      case 28: return setC('\\');
+      case 29: return setC(']');
+      case 30: return setC('^'); // up arrow
+      case 31: return setC('~'); // left arrow
+      case 32: return setC(' ');
+      case 33: return setC('!');
+      case 34: return setC('"');
+      case 35: return setC('#');
+      case 36: return setC('$');
+      case 37: return setC('%');
+      case 38: return setC('&');
+      case 39: return setC('\'');
+      case 40: return setC('(');
+      case 41: return setC(')');
+      case 42: return setC('*');
+      case 43: return setC('+');
+      case 44: return setC(',');
+      case 45: return setC('-');
+      case 46: return setC('.');
+      case 47: return setC('/');
       // 0-9 (48-57)
-      case 58: return ':';
-      case 59: return ';';
-      case 60: return '<';
-      case 61: return '=';
-      case 62: return '>';
-      case 63: return '?';
+      case 58: return setC(':');
+      case 59: return setC(';');
+      case 60: return setC('<');
+      case 61: return setC('=');
+      case 62: return setC('>');
+      case 63: return setC('?');
     }
   }
 
+  auto setUtf = [&](ulong utf) {
+    drawChar.setUtf(utf);
+    return drawChar;
+  };
+
   // 64-127 : graphic characters
-  switch (pet) {
-    case 64 : utf = 0x1fb79; return 0; // horizontal mid line
-    case 65 : utf = 0x2660 ; return 0; // spades suit
-    case 66 : utf = 0x1fb72; return 0; // vertical line 1
-    case 67 : utf = 0x1fb78; return 0; // horizontal line 1
-    case 68 : utf = 0x1fb77; return 0; // horizontal line 2
-    case 69 : utf = 0x1fb76; return 0; // horizontal line 3
-    case 70 : utf = 0x1fb7a; return 0; // horizontal line 4
-    case 71 : utf = 0x1fb71; return 0; // vertical line 2
-    case 72 : utf = 0x1fb74; return 0; // vertical line 3
-    case 73 : utf = 0x256e ; return 0; // round corner ll
-    case 74 : utf = 0x2570 ; return 0; // round corner ur
-    case 75 : utf = 0x256f ; return 0; // round corner ul
-    case 76 : utf = 0x1fb7c; return 0; // square corner ll
-    case 77 : utf = 0x2572 ; return 0; // diagonal tl->br
-    case 78 : utf = 0x2571 ; return 0; // diagonal bl->tr
-    case 79 : utf = 0x1fb7d; return 0; // square corner tl
-    case 80 : utf = 0x1fb7e; return 0; // square corner tr
-    case 81 : utf = 0x25cf ; return 0; // white filled circle, black square
-    case 82 : utf = 0x1fb7b; return 0; // horizontal line 5
-    case 83 : utf = 0x2665 ; return 0; // hearts suit
-    case 84 : utf = 0x1fb70; return 0; // vertical line 4
-    case 85 : utf = 0x256d ; return 0; // round corner lr
-    case 86 : utf = 0x2573 ; return 0; // cross
-    case 87 : utf = 0x25cb ; return 0; // white stroked circle, black square
-    case 88 : utf = 0x2663 ; return 0; // clubs suit
-    case 89 : utf = 0x1fb75; return 0; // vertical line 5
-    case 90 : utf = 0x2666 ; return 0; // diamonds suit
-    case 91 : utf = 0x253c ; return 0; // plus
-    case 92 : utf = 0x1fb8c; return 0; // hash fill left half
-    case 93 : utf = 0x2502 ; return 0; // vertical line 5
-    case 94 : utf = 0x0360 ; return 0; // pi
-    case 95 : utf = 0x25e5 ; return 0; // filled tr triangle
-    case 96 : utf = 0x00a0 ; return 0; // space
-    case 97 : utf = 0x258c ; return 0; // filled left side
-    case 98 : utf = 0x2584 ; return 0; // filled bottom side
-    case 99 : utf = 0x2594 ; return 0; // filled top side
-    case 100: utf = 0x2581 ; return 0; // horizontal line bottom
-    case 101: utf = 0x258f ; return 0; // vertical line left
-    case 102: utf = 0x2592 ; return 0; // hash fill
-    case 103: utf = 0x2595 ; return 0; // line top and right
-    case 104: utf = 0x1fb8f; return 0; // hash fill bottom half
-    case 105: utf = 0x25e4 ; return 0; // filled tl triangle
-    case 106: utf = 0x1fb87; return 0; // thick line right
-    case 107: utf = 0x251c ; return 0; // vertical line mid and to right
-    case 108: utf = 0x2597 ; return 0; // filled br quarter
-    case 109: utf = 0x2514 ; return 0; // stroked tr quarter
-    case 110: utf = 0x2510 ; return 0; // stroked bl quarter
-    case 111: utf = 0x2582 ; return 0; // thick line bottom
-    case 112: utf = 0x250c ; return 0; // stroked br quarter
-    case 113: utf = 0x2534 ; return 0; // horizontal line mid and to top
-    case 114: utf = 0x252c ; return 0; // horizontal line mid and to bottom
-    case 115: utf = 0x2524 ; return 0; // vertical line mid and to left
-    case 116: utf = 0x258e ; return 0; // thick line left
-    case 117: utf = 0x258d ; return 0; // double thick line left
-    case 118: utf = 0x1fb88; return 0; // double thick line right
-    case 119: utf = 0x1fb82; return 0; // double thick line top
-    case 120: utf = 0x1fb83; return 0; // triple thick line top
-    case 121: utf = 0x2583 ; return 0; // quadruple thick line bottom
-    case 122: utf = 0x1fb7f; return 0; // stroked br quarter
-    case 123: utf = 0x2596 ; return 0; // filled bl quarter
-    case 124: utf = 0x259d ; return 0; // filled tr quarter
-    case 125: utf = 0x2518 ; return 0; // stroked tl quarter
-    case 126: utf = 0x2598 ; return 0; // filled tl quarter
-    case 127: utf = 0x259a ; return 0; // filled tl and br quarter
+  switch (pet1.c()) {
+    case 64 : return setUtf(0x1fb79); // horizontal mid line
+    case 65 : return setUtf(0x2660 ); // spades suit
+    case 66 : return setUtf(0x1fb72); // vertical line 1
+    case 67 : return setUtf(0x1fb78); // horizontal line 1
+    case 68 : return setUtf(0x1fb77); // horizontal line 2
+    case 69 : return setUtf(0x1fb76); // horizontal line 3
+    case 70 : return setUtf(0x1fb7a); // horizontal line 4
+    case 71 : return setUtf(0x1fb71); // vertical line 2
+    case 72 : return setUtf(0x1fb74); // vertical line 3
+    case 73 : return setUtf(0x256e ); // round corner ll
+    case 74 : return setUtf(0x2570 ); // round corner ur
+    case 75 : return setUtf(0x256f ); // round corner ul
+    case 76 : return setUtf(0x1fb7c); // square corner ll
+    case 77 : return setUtf(0x2572 ); // diagonal tl->br
+    case 78 : return setUtf(0x2571 ); // diagonal bl->tr
+    case 79 : return setUtf(0x1fb7d); // square corner tl
+    case 80 : return setUtf(0x1fb7e); // square corner tr
+    case 81 : return setUtf(0x25cf ); // white filled circle, black square
+    case 82 : return setUtf(0x1fb7b); // horizontal line 5
+    case 83 : return setUtf(0x2665 ); // hearts suit
+    case 84 : return setUtf(0x1fb70); // vertical line 4
+    case 85 : return setUtf(0x256d ); // round corner lr
+    case 86 : return setUtf(0x2573 ); // cross
+    case 87 : return setUtf(0x25cb ); // white stroked circle, black square
+    case 88 : return setUtf(0x2663 ); // clubs suit
+    case 89 : return setUtf(0x1fb75); // vertical line 5
+    case 90 : return setUtf(0x2666 ); // diamonds suit
+    case 91 : return setUtf(0x253c ); // plus
+    case 92 : return setUtf(0x1fb8c); // hash fill left half
+    case 93 : return setUtf(0x2502 ); // vertical line 5
+    case 94 : return setUtf(0x03c0 ); // pi
+    case 95 : return setUtf(0x25e5 ); // filled tr triangle
+    case 96 : return setUtf(0x00a0 ); // space
+    case 97 : return setUtf(0x258c ); // filled left side
+    case 98 : return setUtf(0x2584 ); // filled bottom side
+    case 99 : return setUtf(0x2594 ); // filled top side
+    case 100: return setUtf(0x2581 ); // horizontal line bottom
+    case 101: return setUtf(0x258f ); // vertical line left
+    case 102: return setUtf(0x2592 ); // hash fill
+    case 103: return setUtf(0x2595 ); // line top and right
+    case 104: return setUtf(0x1fb8f); // hash fill bottom half
+    case 105: return setUtf(0x25e4 ); // filled tl triangle
+    case 106: return setUtf(0x1fb87); // thick line right
+    case 107: return setUtf(0x251c ); // vertical line mid and to right
+    case 108: return setUtf(0x2597 ); // filled br quarter
+    case 109: return setUtf(0x2514 ); // stroked tr quarter
+    case 110: return setUtf(0x2510 ); // stroked bl quarter
+    case 111: return setUtf(0x2582 ); // thick line bottom
+    case 112: return setUtf(0x250c ); // stroked br quarter
+    case 113: return setUtf(0x2534 ); // horizontal line mid and to top
+    case 114: return setUtf(0x252c ); // horizontal line mid and to bottom
+    case 115: return setUtf(0x2524 ); // vertical line mid and to left
+    case 116: return setUtf(0x258e ); // thick line left
+    case 117: return setUtf(0x258d ); // double thick line left
+    case 118: return setUtf(0x1fb88); // double thick line right
+    case 119: return setUtf(0x1fb82); // double thick line top
+    case 120: return setUtf(0x1fb83); // triple thick line top
+    case 121: return setUtf(0x2583 ); // quadruple thick line bottom
+    case 122: return setUtf(0x1fb7f); // stroked br quarter
+    case 123: return setUtf(0x2596 ); // filled bl quarter
+    case 124: return setUtf(0x259d ); // filled tr quarter
+    case 125: return setUtf(0x2518 ); // stroked tl quarter
+    case 126: return setUtf(0x2598 ); // filled tl quarter
+    case 127: return setUtf(0x259a ); // filled tl and br quarter
   }
 
-  return ' '; // TODO
+  // TODO ?
+  assert(false);
+
+  return drawChar;
 }
 
 //---
 
 CPetBasicToken::
-CPetBasicToken(const CPetBasic *b, const TokenType &type, const std::string &str) :
- basic_(b), type_(type)
+CPetBasicToken(const CPetBasic *basic, const TokenType &type, const std::string &str) :
+ basic_(basic), type_(type)
 {
   str_ = str;
 }

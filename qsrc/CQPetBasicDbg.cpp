@@ -10,6 +10,7 @@
 #include <QApplication>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QMouseEvent>
 #include <cmath>
 
 #include <svg/play_svg.h>
@@ -37,14 +38,16 @@ CQPetBasicDbg(CQPetBasic *basic) :
   auto *toolbarFrame  = CQUtil::makeWidget<QFrame>(this, "toolbar");
   auto *toolbarLayout = CQUtil::makeLayout<QHBoxLayout>(toolbarFrame, 2, 2);
 
+  toolbarFrame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
   auto is = QSize(48, 48);
 
   playButton_  = new CQPixmapButton(CQPixmapCacheInst->getIcon("PLAY"    ), is);
   pauseButton_ = new CQPixmapButton(CQPixmapCacheInst->getIcon("PAUSE"   ), is);
   stepButton_  = new CQPixmapButton(CQPixmapCacheInst->getIcon("PLAY_ONE"), is);
 
-  playButton_ ->setToolTip("Play");
-  pauseButton_->setToolTip("Pause");
+  playButton_ ->setToolTip("Run");
+  pauseButton_->setToolTip("Stop");
   stepButton_ ->setToolTip("Step");
 
   connect(playButton_ , SIGNAL(clicked()), this, SLOT(playSlot ()));
@@ -70,6 +73,17 @@ updateFileOffset()
 
 void
 CQPetBasicDbg::
+scrollVisible()
+{
+  int lineInd = basic_->lineInd();
+
+  auto pos = file_->lineIndPos(lineInd);
+
+  area_->ensureVisible(pos.x(), pos.y(), 100, 100);
+}
+
+void
+CQPetBasicDbg::
 updateFileSize(const QSize &size)
 {
   area_->setSize(size);
@@ -81,12 +95,19 @@ void
 CQPetBasicDbg::
 playSlot()
 {
+  auto lineNum = file_->markerLineNum();
+
+  if (lineNum > 0)
+    basic_->contRunTo(lineNum);
+  else
+    basic_->contRun();
 }
 
 void
 CQPetBasicDbg::
 pauseSlot()
 {
+  basic_->setStopped(true);
 }
 
 void
@@ -108,6 +129,41 @@ CQPetBasicFileView(CQPetBasic *basic) :
   setFont(font);
 }
 
+int
+CQPetBasicFileView::
+markerLineNum() const
+{
+  if (markers_.empty())
+    return -1;
+
+  return *markers_.begin();
+}
+
+QPoint
+CQPetBasicFileView::
+lineIndPos(int lineInd) const
+{
+  return QPoint(0, th_*lineInd);
+}
+
+void
+CQPetBasicFileView::
+mouseDoubleClickEvent(QMouseEvent *e)
+{
+  int r = (e->y() - offset_.y())/th_;
+  int c = (e->x() - offset_.x())/tw_;
+  if (r < 0 || c < 0) return;
+
+  auto *lineData = basic_->getLineIndData(uint(r));
+  if (! lineData) return;
+
+  markers_.clear();
+
+  markers_.insert(lineData->lineN);
+
+  update();
+}
+
 void
 CQPetBasicFileView::
 paintEvent(QPaintEvent *)
@@ -120,9 +176,9 @@ paintEvent(QPaintEvent *)
 
   QFontMetrics fm(font());
 
-  auto tw = fm.horizontalAdvance("X");
-  auto th = fm.height();
-  auto ta = fm.ascent();
+  tw_ = fm.horizontalAdvance("X");
+  th_ = fm.height();
+  ta_ = fm.ascent();
 
   auto nl = basic_->maxLine();
 
@@ -142,11 +198,16 @@ paintEvent(QPaintEvent *)
     while (uint(lineNumStr.size()) < lw)
       lineNumStr = " " + lineNumStr;
 
-    painter.setPen(Qt::black);
+    auto marked = (markers_.find(lineData.lineN) != markers_.end());
 
-    painter.drawText(x, y + ta, lineNumStr);
+    if (marked)
+      painter.setPen(Qt::green);
+    else
+      painter.setPen(Qt::black);
 
-    x += (lw + 1)*tw;
+    painter.drawText(x, y + ta_, lineNumStr);
+
+    x += (lw + 1)*tw_;
 
     //---
 
@@ -156,9 +217,9 @@ paintEvent(QPaintEvent *)
 
     auto lineStr = basic_->lineToString(lineData, /*highlight*/false);
 
-    painter.drawText(x, y + ta, QString::fromStdString(lineStr));
+    painter.drawText(x, y + ta_, QString::fromStdString(lineStr));
 
-    y += th;
+    y += th_;
 
     maxLineLen_ = std::max(maxLineLen_, uint(lw + 1 + lineStr.size()));
   }
@@ -177,12 +238,12 @@ dataSize() const
 {
   QFontMetrics fm(font());
 
-  auto tw = fm.horizontalAdvance("X");
-  auto th = fm.height();
+  tw_ = fm.horizontalAdvance("X");
+  th_ = fm.height();
 
   auto nl = basic_->numLines();
 
-  return QSize(80*tw, nl*th);
+  return QSize(80*tw_, nl*th_);
 }
 
 QSize
@@ -191,8 +252,8 @@ sizeHint() const
 {
   QFontMetrics fm(font());
 
-  auto tw = fm.horizontalAdvance("X");
-  auto th = fm.height();
+  tw_ = fm.horizontalAdvance("X");
+  th_ = fm.height();
 
-  return QSize(80*tw, 40*th);
+  return QSize(80*tw_, 40*th_);
 }

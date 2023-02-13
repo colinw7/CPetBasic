@@ -12,6 +12,7 @@ main(int argc, char **argv)
   bool highlight        = false;
   bool run              = false;
   bool loop             = false;
+  bool raw              = false;
   bool debug            = false;
 
   for (int i = 1; i < argc; ++i) {
@@ -28,6 +29,8 @@ main(int argc, char **argv)
         run = true;
       else if (arg == "loop")
         loop = true;
+      else if (arg == "raw")
+        raw = true;
       else if (arg == "debug")
         debug = true;
     }
@@ -39,6 +42,9 @@ main(int argc, char **argv)
 
   basic.setReplaceEmbedded(replace_embedded);
   basic.setListHighlight(highlight);
+
+  if (raw)
+    basic.setRaw(true);
 
   basic.setDebug(debug);
 

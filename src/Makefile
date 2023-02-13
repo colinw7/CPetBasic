@@ -18,6 +18,8 @@ dirs:
 
 SRC = \
 CPetBasic.cpp \
+CPetBasicRawTerm.cpp \
+CPetBasicTerm.cpp \
 \
 Expr/CExprBValue.cpp \
 Expr/CExprCompile.cpp \
@@ -35,6 +37,8 @@ Expr/CExprToken.cpp \
 Expr/CExprTokenStack.cpp \
 Expr/CExprValue.cpp \
 Expr/CExprVariable.cpp \
+\
+CEscape.cpp \
 
 OBJS = $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(SRC))
 
@@ -45,6 +49,7 @@ CPPFLAGS = \
 -I../include/Expr \
 -I../include \
 -I../../CReadLine/include \
+-I../../CEscape/include \
 -I../../CFile/include \
 -I../../CMath/include \
 -I../../CStrUtil/include \

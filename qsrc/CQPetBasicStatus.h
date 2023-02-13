@@ -15,6 +15,10 @@ class CQPetBasicStatus : public QFrame {
   void setText(const QString &text);
 
  private Q_SLOTS:
+  void keyboardSlot();
+  void consoleSlot();
+  void debugSlot();
+
   void stopSlot();
 
  private:

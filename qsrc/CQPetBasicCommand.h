@@ -16,6 +16,13 @@ class CQPetBasicCommandScroll : public CQCommand::ScrollArea {
 
   CQPetBasicCommandTerm *command() const { return command_; }
 
+  QSize sizeHint() const override;
+
+ private Q_SLOTS:
+  void executeCommandSlot(const QString &cmd);
+
+  void keyPressSlot(const QString &cmd);
+
  protected:
   CQCommand::CommandWidget *createCommandWidget() const override;
 
@@ -31,6 +38,8 @@ class CQPetBasicCommandTerm : public CQCommand::CommandWidget {
 
  public:
   CQPetBasicCommandTerm(CQPetBasicCommandScroll *scroll);
+
+  QSize sizeHint() const override;
 
  private:
   CQPetBasicCommandScroll* scroll_ { nullptr };

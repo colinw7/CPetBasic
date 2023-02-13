@@ -2,7 +2,7 @@ TEMPLATE = app
 
 TARGET = CQPetBasic
 
-QT += widgets
+QT += widgets svg
 
 DEPENDPATH += .
 
@@ -15,9 +15,9 @@ CONFIG += c++17
 
 SOURCES += \
 main.cpp \
-CQPetBasic.cpp \
 CQPetBasicApp.cpp \
 CQPetBasicCommand.cpp \
+CQPetBasic.cpp \
 CQPetBasicDbg.cpp \
 CQPetBasicKeyboard.cpp \
 CQPetBasicStatus.cpp \
@@ -44,14 +44,19 @@ INCLUDEPATH += \
 . \
 ../include \
 ../include/Expr \
+../../CQModelView/include \
+../../CQBaseModel/include \
 ../../CQUtil/include \
 ../../CUtil/include \
+../../CStrUtil/include \
 
 PRE_TARGETDEPS = \
 ../lib/libCPetBasic.a \
 
 unix:LIBS += \
 -L../lib \
+-L../../CQModelView/lib \
+-L../../CQBaseModel/lib \
 -L../../CQUtil/lib \
 -L../../CReadLine/lib \
 -L../../CFont/lib \
@@ -64,7 +69,8 @@ unix:LIBS += \
 -L../../CStrUtil/lib \
 -L../../CRegExp/lib \
 -L../../COS/lib \
--lCPetBasic -lCQUtil -lCReadLine \
+-lCPetBasic \
+-lCQModelView -lCQBaseModel -lCQUtil -lCReadLine \
 -lCFont -lCImageLib -lCConfig -lCUtil \
 -lCFileUtil -lCFile -lCMath -lCStrUtil -lCRegExp -lCOS \
--lpng -ljpeg -ltre -lreadline
+-lpng -ljpeg -ltre -lreadline -lcurses

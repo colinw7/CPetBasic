@@ -21,9 +21,6 @@ class CQPetBasicKeyboard : public QFrame {
   CQPetBasicApp* app_ { nullptr };
   QPixmap        pixmap_;
 
-  bool shift_   { false };
-  bool reverse_ { false };
-
   int xl_ { 0 };
   int yt_ { 0 };
   int xr_ { 0 };

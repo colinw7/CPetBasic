@@ -7,66 +7,12 @@
 #include <QApplication>
 #include <QEventLoop>
 #include <QTabWidget>
-#include <QTime>
-
-#if 0
-namespace {
-
-bool isHandledChar(uchar c) {
-  if (c >= 32 && c <= 127) return true;
-
-  if (c == 0  ) return true;
-  if (c == 173) return true;
-  if (c == 214) return true;
-  if (c == 216) return true;
-  if (c == 219) return true;
-
-  return false;
-}
-
-}
-#endif
-
-//---
 
 CQPetBasic::
-CQPetBasic(CQPetBasicTerm *term) :
- term_(term)
+CQPetBasic(CQPetBasicApp *app) :
+ app_(app)
 {
   setReplaceEmbedded(true);
-}
-
-void
-CQPetBasic::
-printString(const std::string &s) const
-{
-//std::cerr << CPetBasic::decodeEmbeddedStr(s) << "\n";
-  term_->drawString(s);
-}
-
-char
-CQPetBasic::
-getChar() const
-{
-  auto c = term_->app()->getChar();
-  if (! c) return '\0';
-
-  c = std::toupper(c);
-
-  return c;
-}
-
-std::string
-CQPetBasic::
-getString(const std::string &prompt) const
-{
-  printString(prompt + "? ");
-
-  auto str = term_->app()->getString();
-
-  str = str.toUpper();
-
-  return str.toStdString();
 }
 
 void
@@ -75,63 +21,53 @@ resize(uint nr, uint nc)
 {
   CPetBasic::resize(nr, nc);
 
-  term_->resize(nr, nc);
-}
+  auto *term = app_->term();
 
-bool
-CQPetBasic::
-getScreenMemory(uint r, uint c, uchar &petsci) const
-{
-  // screen memory is ascii, need to return petsci
-  bool reverse; ulong utf;
-  auto ascii = term_->getChar(r, c, utf, reverse);
-
-  petsci = asciiToPet(ascii, utf, reverse);
-
-  return true;
+  term->resize(nr, nc);
 }
 
 void
 CQPetBasic::
-setScreenMemory(uint r, uint c, uchar petsci)
+setReverse(bool b)
 {
-  // value is in petsci, screen memory is ascii
-  bool reverse; ulong utf;
-  auto ascii = petToAscii(petsci, utf, reverse);
+  CPetBasic::setReverse(b);
 
-//if (! isHandledChar(value))
-//  term_->app()->errorMsg(QString("Unhandled '%1'").arg(value));
-
-  term_->setChar(r, c, ascii, utf, reverse);
+  app_->updateInterface();
 }
 
 void
 CQPetBasic::
-delay()
+setShift(bool b)
 {
-  auto dieTime = QTime::currentTime().addMSecs(10);
+  CPetBasic::setShift(b);
 
-  while (QTime::currentTime() < dieTime)
-    qApp->processEvents(QEventLoop::AllEvents, 10);
+  app_->updateInterface();
 }
 
 void
 CQPetBasic::
 notifyRunLine(uint n) const
 {
-  term_->app()->setStatusMsg(QString("Line %1").arg(n));
+  app_->setStatusMsg(QString("Line %1").arg(n));
 }
 
 void
 CQPetBasic::
 notifyLinesChanged()
 {
-  term_->app()->notifyLinesChanged();
+  app_->notifyLinesChanged();
 }
 
 void
 CQPetBasic::
 notifyLineNumChanged()
 {
-  term_->app()->notifyLineNumChanged();
+  app_->notifyLineNumChanged();
+}
+
+void
+CQPetBasic::
+notifyVariablesChanged()
+{
+  app_->notifyVariablesChanged();
 }

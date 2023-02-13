@@ -5,13 +5,27 @@
 #include <CQUtil.h>
 #include <CUtf8.h>
 
+#include <QApplication>
 #include <QTimer>
+#include <QEventLoop>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QTime>
 
 CQPetBasicTerm::
 CQPetBasicTerm(CQPetBasicApp *app) :
- QWidget(app), app_(app)
+ QWidget(app), CPetBasicTerm(app->basic()), app_(app)
+{
+}
+
+CQPetBasicTerm::
+~CQPetBasicTerm()
+{
+}
+
+void
+CQPetBasicTerm::
+init()
 {
   setObjectName("perTerm");
 
@@ -23,47 +37,152 @@ CQPetBasicTerm(CQPetBasicApp *app) :
 #endif
   setFont(font);
 
-  basic_ = new CQPetBasic(this);
-
   cursorTimer_ = new QTimer(this);
 
   CQUtil::defConnect(cursorTimer_, this, SLOT(cursorTimeout()));
 
   cursorTimer_->start(1000);
 
-  resize(basic_->numRows(), basic_->numCols());
+  setFocusPolicy(Qt::StrongFocus);
+
+  loopTimer_ = new QTimer(this);
+  loopTimer_->setSingleShot(true);
+
+  CQUtil::defConnect(loopTimer_, this, SLOT(loopTimeout()));
 }
 
+CQPetBasic *
 CQPetBasicTerm::
-~CQPetBasicTerm()
+basic() const
 {
-  delete basic_;
+  return app_->basic();
 }
 
 void
 CQPetBasicTerm::
 resize(uint nr, uint nc)
 {
-  nr_ = nr;
-  nc_ = nc;
-
-  auto n = nr_*nc_;
-
-  chars_.resize(n);
+  CPetBasicTerm::resize(nr, nc);
 
   setFixedSize(sizeHint());
+}
 
-  clear();
+//---
+
+char
+CQPetBasicTerm::
+readChar() const
+{
+  auto *th = const_cast<CQPetBasicTerm *>(this);
+
+  if (! th->loop_)
+    th->loop_ = new QEventLoop;
+
+  th->looping_  = true;
+  th->loopChar_ = true;
+  th->loopStr_  = "";
+  th->loopC_    = '\0';
+
+  loopTimer_->start(250);
+
+  loop_->exec();
+
+  loopTimer_->stop();
+
+  auto c = loopC_;
+  if (! c) return '\0';
+
+  c = std::toupper(c);
+
+  return c;
+}
+
+std::string
+CQPetBasicTerm::
+readString(const std::string &prompt) const
+{
+  auto *th = const_cast<CQPetBasicTerm *>(this);
+
+  basic_->printString(prompt + "? ");
+
+  if (! th->loop_)
+    th->loop_ = new QEventLoop;
+
+  th->looping_  = true;
+  th->loopChar_ = false;
+  th->loopStr_  = "";
+  th->loopC_    = '\0';
+
+//loopTimer_->start(250);
+
+  loop_->exec();
+
+  auto str = loopStr_;
+
+  str = str.toUpper();
+
+  return str.toStdString();
 }
 
 void
 CQPetBasicTerm::
-moveTo(uint r, uint c)
+setLoopChar(char c)
 {
-  r_ = r;
-  c_ = c;
+  looping_  = false;
+
+  if (loopChar_) {
+    loopStr_  = "";
+    loopC_    = c;
+    loopChar_ = false;
+  }
+  else {
+    loopStr_ = QString() + c;
+    loopC_   = '\0';
+  }
+
+  loop_->exit(0);
 }
 
+void
+CQPetBasicTerm::
+addLoopChar(char c)
+{
+  loopStr_ += c;
+}
+
+void
+CQPetBasicTerm::
+setLoopStr(const QString &str)
+{
+  looping_  = false;
+
+  if (! loopChar_) {
+    loopStr_ = str;
+    loopC_   = '\0';
+  }
+  else {
+    loopStr_  = "";
+    loopC_    = (str.length() ? str[0].toLatin1() : '\0');
+    loopChar_ = false;
+  }
+
+  loop_->exit(0);
+}
+
+void
+CQPetBasicTerm::
+loopTimeout()
+{
+  if (looping_) {
+    looping_ = false;
+
+    loop_->exit(0);
+  }
+}
+
+//---
+
+#if 0
 void
 CQPetBasicTerm::
 drawString(const std::string &str)
@@ -80,60 +199,75 @@ drawString(const std::string &str)
 
     // handle new line
     if      (c == '\n') {
-      ++r_;
+      cursorDown(/*force*/true);
 
       cursorLeftFull();
 
-      if (r_ >= nr_)
+      if (row() >= numRows())
         scrollUp();
     }
 
     // handle tab
     else if (c == '\t') {
-      if (drawChar1(' '))
+      if (drawChar(' '))
         cursorRight();
 
       while (c_ % 10 != 1) {
-        if (drawChar1(' '))
+        if (drawChar(' '))
           cursorRight();
         else
           break;
       }
     }
 
-    // handle embedded escape codes
-    else if (c1 < 8 || (c1 >= 16 && c1 < 20) || c1 >= 128) {
-      if      (c1 ==  1) home();
-      else if (c1 ==  2) clear();
-    //else if (c1 ==  3) stop();
-    //else if (c1 ==  4) pi();
-    //else if (c1 ==  5) ins();
-      else if (c1 ==  6) reverse_ = true;
-      else if (c1 ==  7) reverse_ = false;
-      else if (c1 == 16) cursorUp();
-      else if (c1 == 17) cursorDown();
-      else if (c1 == 18) cursorLeft();
-      else if (c1 == 19) cursorRight();
-      else {
-        auto petsci = CPetBasic::decodeEmbedded(c1);
-
-        bool reverse; ulong utf;
-        auto ascii = CPetBasic::petToAscii(petsci, utf, reverse);
-
-        setChar(r_, c_, ascii, utf, reverse);
-
-        cursorRight(/*nl*/false);
-      }
-    }
-
-    // handle normal char
     else {
-      // map to upper case
-      if (islower(c))
-        c = toupper(c);
+      // handle embedded escape codes
+      bool handled = true;
 
-      if (drawChar1(c))
-        cursorRight(/*nl*/false);
+      switch (c1) {
+        case  19: home(); break;
+        case 147: clear(); break;
+        case 255: basic()->setStopped(true); break;
+        case  18: basic()->setReverse(true); break;
+        case 146: basic()->setReverse(false); break;
+        case 145: cursorUp(); break;
+        case  17: cursorDown(); break;
+        case 157: cursorLeft(); break;
+        case  29: cursorRight(); break;
+        default:
+          handled = false;
+          break;
+      }
+
+      if (! handled && c1 >= 128) {
+        c1 -= 128;
+
+        CPetDrawChar drawChar(c1);
+
+        auto pet = CPetBasic::drawCharToPet(drawChar);
+
+        pet.shift();
+
+        drawChar = CPetBasic::petToDrawChar(pet);
+
+        drawChar.setReverse(basic()->isReverse());
+
+        setChar(row(), c_, drawChar);
+
+        cursorRight(/*force*/true);
+
+        handled = true;
+      }
+
+      // handle normal char
+      if (! handled) {
+        // map to upper case
+        if (islower(c))
+          c = toupper(c);
+
+        if (drawChar(c))
+          cursorRight(/*force*/true);
+      }
     }
 
     ++i;
@@ -141,178 +275,25 @@ drawString(const std::string &str)
 
   update();
 }
-
-//---
-
-uchar
-CQPetBasicTerm::
-getChar(uint r, uint c, ulong &utf, bool &reverse) const
-{
-  auto i = encodeCharPos(r, c);
-
-  auto c1 = chars_[i].c;
-  utf     = chars_[i].utf;
-  reverse = chars_[i].reverse;
-
-  return c1;
-}
-
-void
-CQPetBasicTerm::
-setChar(uint r, uint c, uchar value, ulong utf, bool reverse)
-{
-  auto i = encodeCharPos(r, c);
-
-  chars_[i].c       = value;
-  chars_[i].utf     = utf;
-  chars_[i].reverse = reverse;
-
-  update();
-}
-
-bool
-CQPetBasicTerm::
-drawChar1(const uchar &c)
-{
-//if (! isHandledChar(c))
-//  app_->errorMsg(QString("Unhandled '%1'").arg(c));
-
-  if (r_ >= nr_ || c_ >= nc_) return false;
-
-  auto i = encodeCharPos(r_, c_);
-
-  chars_[i] = CharData(c, reverse_);
-
-  return true;
-}
-
-void
-CQPetBasicTerm::
-scrollUp()
-{
-  uint n = nr_*nc_;
-
-  // move all chars left by nc_
-  uint i1 = 0;
-
-  for (uint i2 = nc_; i2 < n; ++i1, ++i2)
-    chars_[i1] = chars_[i2];
-
-  // fill last row with spaces
-  for ( ; i1 < n; ++i1)
-    chars_[i1] = CharData(uchar(' '), false);
-
-  // update mouse pos to previous row
-  if (r_ > 0)
-    --r_;
-}
+#endif
 
 //---
 
 void
 CQPetBasicTerm::
-home()
+update()
 {
-  r_ = 0;
-  c_ = 0;
+  QWidget::update();
 }
 
 void
 CQPetBasicTerm::
-clear()
+delay(long t)
 {
-  home();
+  auto dieTime = QTime::currentTime().addMSecs(4*t);
 
-  for (uint i = 0, r = 0; r < nr_; ++r)
-    for (uint c = 0; c < nc_; ++c, ++i)
-      setChar(r, c, ' ', 0, false);
-}
-
-void
-CQPetBasicTerm::
-cursorUp()
-{
-  if (r_ > 0)
-    --r_;
-}
-
-void
-CQPetBasicTerm::
-cursorDown()
-{
-  if (r_ < nr_ - 1)
-    ++r_;
-}
-
-void
-CQPetBasicTerm::
-cursorLeft()
-{
-  if      (c_ > 0)
-    --c_;
-  else if (r_ > 0) {
-    c_ = nc_ - 1;
-    --r_;
-  }
-}
-
-void
-CQPetBasicTerm::
-cursorRight(bool nl)
-{
-  if (nl) {
-    if      (c_ < nc_ - 1)
-      ++c_;
-    else if (r_ < nr_ - 1) {
-      c_ = 0;
-      ++r_;
-    }
-  }
-  else
-    ++c_;
-}
-
-void
-CQPetBasicTerm::
-cursorLeftFull()
-{
-  c_ = 0;
-}
-
-void
-CQPetBasicTerm::
-del()
-{
-  if (c_ > 0)
-    setChar(r_, --c_, ' ', 0, false);
-}
-
-void
-CQPetBasicTerm::
-inst()
-{
-}
-
-void
-CQPetBasicTerm::
-enter()
-{
-  std::string str;
-
-  for (uint c = 0; c < c_; ++c) {
-    ulong utf; bool reverse;
-    auto c1 = getChar(r_, c, utf, reverse);
-
-    if (utf)
-      CUtf8::append(str, utf);
-    else
-      str += c1;
-  }
-
-  cursorDown();
-  cursorLeftFull();
-
-  basic_->inputLine(str);
+  while (QTime::currentTime() < dieTime)
+    qApp->processEvents(QEventLoop::AllEvents, 10);
 }
 
 //---
@@ -324,6 +305,132 @@ cursorTimeout()
   cursorBlink_ = ! cursorBlink_;
 
   update();
+}
+
+void
+CQPetBasicTerm::
+keyPressEvent(QKeyEvent *e)
+{
+  auto key = e->key();
+  auto mod = e->modifiers();
+
+  if (e->key() == Qt::Key_Shift) {
+    basic()->setShift(true);
+    return;
+  }
+
+  bool isShift = basic()->isShift();
+  bool isCtrl  = (mod & Qt::ControlModifier);
+
+  auto sendChar = [&](uchar c) {
+    CPetDrawChar drawChar(c, 0, basic()->isReverse());
+
+    if (isShift) {
+      auto pet = CPetBasic::drawCharToPet(drawChar);
+
+      pet.shift();
+
+      drawChar = CPetBasic::petToDrawChar(pet);
+    }
+
+    if (isLooping()) {
+      if (isLoopChar()) {
+        setLoopChar(c);
+        return;
+      }
+
+      addLoopChar(c);
+    }
+
+    setChar(row(), col(), drawChar);
+    cursorRight();
+    update();
+  };
+
+  if (key >= Qt::Key_A && key <= Qt::Key_Z) {
+    auto c = uchar('A' + (key - Qt::Key_A));
+
+    return sendChar(c);
+  }
+
+  isShift = isCtrl;
+
+  if (key >= Qt::Key_0 && key <= Qt::Key_9) {
+    auto c = uchar('0' + (key - Qt::Key_0));
+
+    return sendChar(c);
+  }
+
+  switch (key) {
+    case Qt::Key_Exclam:       return sendChar('!');
+    case Qt::Key_QuoteDbl:     return sendChar('"');
+    case Qt::Key_NumberSign:   return sendChar('#');
+    case Qt::Key_Dollar:       return sendChar('$');
+    case Qt::Key_Percent:      return sendChar('%');
+    case Qt::Key_Apostrophe:   return sendChar('\'');
+    case Qt::Key_Ampersand:    return sendChar('&');
+    case Qt::Key_Backslash:    return sendChar('\\');
+    case Qt::Key_ParenLeft:    return sendChar('(');
+    case Qt::Key_ParenRight:   return sendChar(')');
+    case Qt::Key_AsciiTilde:   return sendChar('~'); // left arrow
+    case Qt::Key_AsciiCircum:  return sendChar('^'); // up arrow
+    case Qt::Key_Colon:        return sendChar(':');
+    case Qt::Key_Comma:        return sendChar(',');
+    case Qt::Key_Semicolon:    return sendChar(';');
+    case Qt::Key_Question:     return sendChar('?');
+    case Qt::Key_At:           return sendChar('@');
+    case Qt::Key_BracketLeft:  return sendChar('[');
+    case Qt::Key_BracketRight: return sendChar(']');
+    case Qt::Key_Space:        return sendChar(' ');
+    case Qt::Key_Less:         return sendChar('<');
+    case Qt::Key_Greater:      return sendChar('>');
+    case Qt::Key_Slash:        return sendChar('/');
+    case Qt::Key_Asterisk:     return sendChar('*');
+    case Qt::Key_Plus:         return sendChar('+');
+    case Qt::Key_Period:       return sendChar('.');
+    case Qt::Key_Minus:        return sendChar('-');
+    case Qt::Key_Equal:        return sendChar('=');
+
+    case Qt::Key_Backspace: { del(); update(); return; }
+
+    case Qt::Key_Return:
+    case Qt::Key_Enter: {
+      if (isLooping())
+        setLoopStr(loopStr());
+      else {
+        enterLine(); update();
+      }
+      return;
+    }
+
+    case Qt::Key_Home: {
+      if (! inQuotes()) {
+        home();
+      }
+      else {
+        CPetsciChar pet1(! isShift ? 147 : 211);
+
+        auto drawChar1 = CPetBasic::petToDrawChar(pet1);
+        setChar(row(), col(), drawChar1);
+        cursorRight();
+      }
+      update();
+      return;
+    }
+
+    case Qt::Key_Left:  { cursorLeft (); update(); return; }
+    case Qt::Key_Up:    { cursorUp   (); update(); return; }
+    case Qt::Key_Right: { cursorRight(); update(); return; }
+    case Qt::Key_Down:  { cursorDown (); update(); return; }
+  }
+}
+
+void
+CQPetBasicTerm::
+keyReleaseEvent(QKeyEvent *e)
+{
+  if (e->key() == Qt::Key_Shift)
+    basic()->setShift(false);
 }
 
 void
@@ -346,10 +453,9 @@ paintEvent(QPaintEvent *)
     double x = 0;
 
     for (uint c = 0; c < nc_; ++c) {
-      bool reverse; ulong utf;
-      auto ic = getChar(r, c, utf, reverse);
+      auto drawChar = getChar(r, c);
 
-      if (reverse) {
+      if (drawChar.isReverse()) {
         painter.fillRect(QRect(x, y, cw_, ch_), Qt::white);
 
         painter.setPen(Qt::black);
@@ -395,10 +501,10 @@ paintEvent(QPaintEvent *)
       //   42 : Treasures
       //   81 : Character
 
-      if (utf > 0)
-        paintUtfChar(&painter, x, y, utf);
+      if (drawChar.utf() > 0)
+        paintUtfChar(&painter, x, y, drawChar.utf());
       else
-        paintChar(&painter, x, y, ic);
+        paintChar(&painter, x, y, drawChar.c());
 
       x += cw_;
     }
@@ -505,19 +611,18 @@ mousePressEvent(QMouseEvent *e)
   int r = e->y()/ch_;
   int c = e->x()/cw_;
 
-  bool reverse; ulong utf;
-  auto ascii = getChar(r, c, utf, reverse);
+  auto drawChar = getChar(r, c);
 
-  auto petsci = CPetBasic::asciiToPet(ascii, utf, reverse);
+  auto petsci = CPetBasic::drawCharToPet(drawChar);
 
-  if (utf > 0)
-    std::cerr << std::hex << utf;
+  if (drawChar.utf() > 0)
+    std::cerr << std::hex << drawChar.utf();
   else
-    std::cerr << int(ascii);
+    std::cerr << int(drawChar.c());
 
-  std::cerr << " (" << int(petsci) << ")";
+  std::cerr << " (" << int(petsci.c()) << ")";
 
-  std::cerr << (reverse ? " Rev" : "") << "\n";
+  std::cerr << (drawChar.isReverse() ? " Rev" : "") << "\n";
 }
 
 QSize

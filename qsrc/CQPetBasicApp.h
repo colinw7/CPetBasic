@@ -11,6 +11,8 @@ class CQPetBasicDbg;
 class CQPetBasicVariables;
 class CQPetBasic;
 
+class QTabWidget;
+class QTimer;
 class QEventLoop;
 
 class CQPetBasicApp : public QWidget {
@@ -19,37 +21,42 @@ class CQPetBasicApp : public QWidget {
  public:
   CQPetBasicApp(QWidget *parent=nullptr);
 
-  CQPetBasicTerm *term() const { return term_; }
+  CQPetBasic *basic() const { return basic_; }
 
-  CQPetBasic *basic() const;
+  CQPetBasicTerm *term() const { return term_; }
 
   QString getString();
   uchar getChar();
 
+  bool isKeyboardVisible() const;
+  void setKeyboardVisible(bool b);
+
+  bool isConsoleVisible() const;
+  void setConsoleVisible(bool b);
+
+  bool isDebugVisible() const;
+  void setDebugVisible(bool b);
+
   void setStatusMsg(const QString &msg);
+
+  void updateInterface();
 
   void notifyLinesChanged();
   void notifyLineNumChanged();
 
+  void notifyVariablesChanged();
+
   void errorMsg(const QString &msg);
 
- public slots:
-  void executeCommand(const QString &cmd);
-  void keyPress(const QString &cmd);
-
  private:
+  CQPetBasic*              basic_     { nullptr };
   CQPetBasicTerm*          term_      { nullptr };
   CQPetBasicKeyboard*      keyboard_  { nullptr };
   CQPetBasicCommandScroll* command_   { nullptr };
-  CQPetBasicStatus*        status_    { nullptr };
+  QTabWidget*              debugTab_  { nullptr };
   CQPetBasicDbg*           dbg_       { nullptr };
   CQPetBasicVariables*     variables_ { nullptr };
-
-  QEventLoop* loop_     { nullptr };
-  bool        looping_  { false };
-  bool        loopChar_ { false };
-  QString     loopStr_;
-  uchar       loopC_    { 0 };
+  CQPetBasicStatus*        status_    { nullptr };
 };
 
 #endif

@@ -2,6 +2,7 @@
 #define CQPetBasicDbg_H
 
 #include <QFrame>
+#include <set>
 
 class CQPetBasic;
 class CQPetBasicFileView;
@@ -16,6 +17,8 @@ class CQPetBasicDbg : public QFrame {
   CQPetBasicDbg(CQPetBasic *basic);
 
   CQPetBasicFileView *file() const { return file_; }
+
+  void scrollVisible();
 
  private Q_SLOTS:
   void updateFileOffset();
@@ -44,7 +47,13 @@ class CQPetBasicFileView : public QFrame {
 
   void setOffset(const QPoint &o) { offset_ = o; }
 
+  int markerLineNum() const;
+
+  QPoint lineIndPos(int lineInd) const;
+
   void resizeEvent(QResizeEvent *) override;
+
+  void mouseDoubleClickEvent(QMouseEvent *e) override;
 
   void paintEvent(QPaintEvent *) override;
 
@@ -56,9 +65,17 @@ class CQPetBasicFileView : public QFrame {
   void updateSize(const QSize &);
 
  private:
+  using Markers = std::set<int>;
+
   CQPetBasic *basic_      { nullptr };
   QPoint      offset_;
   uint        maxLineLen_ { 80 };
+
+  Markers markers_;
+
+  mutable int tw_ { 8 };
+  mutable int th_ { 8 };
+  mutable int ta_ { 8 };
 };
 
 #endif

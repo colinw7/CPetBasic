@@ -3,34 +3,29 @@
 
 #include <CPetBasic.h>
 
-class CQPetBasicTerm;
+class CQPetBasicApp;
 
 //---
 
 class CQPetBasic : public CPetBasic {
  public:
-  CQPetBasic(CQPetBasicTerm *term);
-
-  void printString(const std::string &s) const override;
-
-  char getChar() const override;
-
-  std::string getString(const std::string &prompt) const override;
+  CQPetBasic(CQPetBasicApp *term);
 
   void resize(uint nr, uint nc) override;
 
-  bool getScreenMemory(uint r, uint c, uchar &value) const override;
-  void setScreenMemory(uint r, uint c, uchar value) override;
+  void setReverse(bool b) override;
 
-  void delay() override;
+  void setShift(bool b) override;
 
   void notifyRunLine(uint n) const override;
 
   void notifyLinesChanged() override;
   void notifyLineNumChanged() override;
 
+  void notifyVariablesChanged() override;
+
  private:
-  CQPetBasicTerm *term_ { nullptr };
+  CQPetBasicApp *app_ { nullptr };
 };
 
 #endif
