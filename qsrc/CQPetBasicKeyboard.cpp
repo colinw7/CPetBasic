@@ -51,12 +51,16 @@ mousePressEvent(QMouseEvent *e)
 
   auto sendChar = [&](const CPetDrawChar &drawChar1) {
     if (term->isLooping()) {
+      auto c = char(drawChar1.c());
+
+      auto s = std::string(&c, 1);
+
       if (term->isLoopChar()) {
-        term->setLoopChar(drawChar1.c());
+        term->enterLoopStr(s);
         return;
       }
 
-      term->addLoopChar(drawChar1.c());
+      term->addLoopStr(s);
     }
 
     auto drawChar2 = drawChar1;
@@ -148,7 +152,7 @@ mousePressEvent(QMouseEvent *e)
 
   if (i == 42 || i == 58) { //RETURN
     if (term->isLooping())
-      term->setLoopStr(term->loopStr());
+      term->enterLoopStr("");
     else {
       term->enter(); term->update();
     }

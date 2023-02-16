@@ -590,6 +590,7 @@ compiler_clean: compiler_moc_predefs_clean compiler_moc_header_clean
 		../include/CPetBasicTerm.h \
 		CQPetBasicApp.h \
 		CQPetBasic.h \
+		../include/CPetBasicUtil.h \
 		../../CQUtil/include/CQUtil.h \
 		../../CQUtil/include/CQUtilMeta.h \
 		../../CUtil/include/CUtf8.h

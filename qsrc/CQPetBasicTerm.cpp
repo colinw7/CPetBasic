@@ -1,6 +1,7 @@
 #include <CQPetBasicTerm.h>
 #include <CQPetBasicApp.h>
 #include <CQPetBasic.h>
+#include <CPetBasicUtil.h>
 
 #include <CQUtil.h>
 #include <CUtf8.h>
@@ -27,7 +28,7 @@ void
 CQPetBasicTerm::
 init()
 {
-  setObjectName("perTerm");
+  setObjectName("term");
 
 #if 0
   auto font = qApp->font();
@@ -37,18 +38,24 @@ init()
 #endif
   setFont(font);
 
+  setFocusPolicy(Qt::StrongFocus);
+
+  //---
+
+  // cursor blink timer
   cursorTimer_ = new QTimer(this);
 
   CQUtil::defConnect(cursorTimer_, this, SLOT(cursorTimeout()));
 
   cursorTimer_->start(1000);
 
-  setFocusPolicy(Qt::StrongFocus);
+  //---
 
-  loopTimer_ = new QTimer(this);
-  loopTimer_->setSingleShot(true);
+  // loop timer
+  loopData_.loopTimer = new QTimer(this);
+  loopData_.loopTimer->setSingleShot(true);
 
-  CQUtil::defConnect(loopTimer_, this, SLOT(loopTimeout()));
+  CQUtil::defConnect(loopData_.loopTimer, this, SLOT(loopTimeout()));
 }
 
 CQPetBasic *
@@ -75,23 +82,25 @@ readChar() const
 {
   auto *th = const_cast<CQPetBasicTerm *>(this);
 
-  if (! th->loop_)
-    th->loop_ = new QEventLoop;
+  if (! th->loopData_.eventLoop)
+    th->loopData_.eventLoop = new QEventLoop;
 
-  th->looping_  = true;
-  th->loopChar_ = true;
-  th->loopStr_  = "";
-  th->loopC_    = '\0';
+  // wait for key to be pressed (with timeout)
+  th->loopData_.looping  = true;
+  th->loopData_.loopChar = true;
+  th->loopData_.loopC    = '\0';
 
-  loopTimer_->start(250);
+  loopData_.loopTimer->start(250);
 
-  loop_->exec();
+  loopData_.eventLoop->exec();
 
-  loopTimer_->stop();
+  loopData_.loopTimer->stop();
 
-  auto c = loopC_;
+  // loopC contains read char
+  auto c = loopData_.loopC;
   if (! c) return '\0';
 
+  // map to upper case
   c = std::toupper(c);
 
   return c;
@@ -103,80 +112,68 @@ readString(const std::string &prompt) const
 {
   auto *th = const_cast<CQPetBasicTerm *>(this);
 
+  // output prompt
   basic_->printString(prompt + "? ");
 
-  if (! th->loop_)
-    th->loop_ = new QEventLoop;
+  if (! th->loopData_.eventLoop)
+    th->loopData_.eventLoop = new QEventLoop;
 
-  th->looping_  = true;
-  th->loopChar_ = false;
-  th->loopStr_  = "";
-  th->loopC_    = '\0';
+  // wait for string to be entered (no timeout)
+  th->loopData_.looping  = true;
+  th->loopData_.loopChar = false;
+  th->loopData_.loopStr  = "";
 
-//loopTimer_->start(250);
+  loopData_.eventLoop->exec();
 
-  loop_->exec();
+  // loopStr contains read string
+  auto str = th->loopData_.loopStr;
 
-  auto str = loopStr_;
+  // map to upper case
+  str = CPetBasicUtil::toUpper(str);
 
-  str = str.toUpper();
-
-  return str.toStdString();
+  return str;
 }
 
 void
 CQPetBasicTerm::
-setLoopChar(char c)
+enterLoopStr(const std::string &str)
 {
-  looping_  = false;
+  loopData_.looping = false;
 
-  if (loopChar_) {
-    loopStr_  = "";
-    loopC_    = c;
-    loopChar_ = false;
+  inputBuffer_ += str;
+
+  if (isLoopChar()) {
+    auto c = inputBuffer_[0];
+
+    inputBuffer_ = inputBuffer_.substr(1);
+
+    loopData_.loopC    = c;
+    loopData_.loopChar = false;
   }
   else {
-    loopStr_ = QString() + c;
-    loopC_   = '\0';
+    loopData_.loopStr = inputBuffer_;
+
+    inputBuffer_ = "";
   }
 
-  loop_->exit(0);
+  loopData_.eventLoop->exit(0);
 }
 
 void
 CQPetBasicTerm::
-addLoopChar(char c)
+addLoopStr(const std::string &str)
 {
-  loopStr_ += c;
-}
-
-void
-CQPetBasicTerm::
-setLoopStr(const QString &str)
-{
-  looping_  = false;
-
-  if (! loopChar_) {
-    loopStr_ = str;
-    loopC_   = '\0';
-  }
-  else {
-    loopStr_  = "";
-    loopC_    = (str.length() ? str[0].toLatin1() : '\0');
-    loopChar_ = false;
-  }
-
-  loop_->exit(0);
+  inputBuffer_ += str;
 }
 
 void
 CQPetBasicTerm::
 loopTimeout()
 {
-  if (looping_) {
-    looping_ = false;
+  if (isLooping()) {
+    loopData_.looping = false;
 
-    loop_->exit(0);
+    loopData_.eventLoop->exit(0);
   }
 }
 
@@ -334,12 +331,15 @@ keyPressEvent(QKeyEvent *e)
     }
 
     if (isLooping()) {
+      auto c1 = char(c);
+      auto s  = std::string(&c1, 1);
+
       if (isLoopChar()) {
-        setLoopChar(c);
+        enterLoopStr(s);
         return;
       }
 
-      addLoopChar(c);
+      addLoopStr(s);
     }
 
     setChar(row(), col(), drawChar);
@@ -396,7 +396,7 @@ keyPressEvent(QKeyEvent *e)
     case Qt::Key_Return:
     case Qt::Key_Enter: {
       if (isLooping())
-        setLoopStr(loopStr());
+        enterLoopStr("");
       else {
         enterLine(); update();
       }

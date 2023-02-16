@@ -31,7 +31,7 @@ executeCommandSlot(const QString &cmd)
   auto *term = app_->term();
 
   if (term->isLooping()) {
-    term->setLoopStr(cmd);
+    term->enterLoopStr(cmd.toStdString());
   }
   else {
     auto *basic = app_->basic();
@@ -46,10 +46,10 @@ keyPressSlot(const QString &str)
 {
   auto *term = app_->term();
 
-  if (term->isLooping() && term->isLoopChar()) {
+  if (term->isLooping() && term->isLoopChar() && str.length()) {
     command()->clearEntry();
 
-    term->setLoopChar(str.length() ? str[0].toLatin1() : '\0');
+    term->enterLoopStr(str.toStdString());
   }
 }
 

@@ -43,17 +43,15 @@ class CQPetBasicTerm : public QWidget, public CPetBasicTerm {
 
   //---
 
-  bool isLooping() const { return looping_; }
-  bool isLoopChar() const { return loopChar_; }
-  QString loopStr() const { return loopStr_; }
+  bool isLooping() const { return loopData_.looping; }
+  bool isLoopChar() const { return loopData_.loopChar; }
 
   char readChar() const override;
 
   std::string readString(const std::string &prompt) const override;
 
-  void setLoopChar(char c);
-  void addLoopChar(char c);
-  void setLoopStr(const QString &str);
+  void enterLoopStr(const std::string &s);
+  void addLoopStr(const std::string &s);
 
   //---
 
@@ -88,12 +86,16 @@ class CQPetBasicTerm : public QWidget, public CPetBasicTerm {
   QTimer *cursorTimer_ { nullptr };
   bool    cursorBlink_ { false };
 
-  QTimer*     loopTimer_ { nullptr };
-  QEventLoop* loop_      { nullptr };
-  bool        looping_   { false };
-  bool        loopChar_  { false };
-  QString     loopStr_;
-  uchar       loopC_     { 0 };
+  struct LoopData {
+    QTimer*     loopTimer { nullptr };
+    QEventLoop* eventLoop { nullptr };
+    bool        looping   { false };
+    bool        loopChar  { false };
+    std::string loopStr;
+    uchar       loopC     { 0 };
+  };
+
+  LoopData loopData_;
 
   mutable double cw_ { 8.0 };
   mutable double ch_ { 8.0 };

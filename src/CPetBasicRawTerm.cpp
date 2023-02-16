@@ -155,6 +155,9 @@ readString(const std::string &prompt) const
   if (! isRaw())
     return CPetBasicTerm::readString(prompt);
 
+  // output prompt
+  basic_->printString(prompt + "? ");
+
   auto *th = const_cast<CPetBasicRawTerm *>(this);
 
   while (true) {
