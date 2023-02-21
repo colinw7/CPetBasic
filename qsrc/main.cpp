@@ -1,11 +1,14 @@
 #include <CQPetBasicApp.h>
 #include <CQPetBasic.h>
-#include <QApplication>
+#include <CQApp.h>
+
+//#include <QApplication>
 
 int
 main(int argc, char **argv)
 {
-  QApplication qapp(argc, argv);
+//QApplication qapp(argc, argv);
+  CQApp qapp(argc, argv);
 
   //---
 

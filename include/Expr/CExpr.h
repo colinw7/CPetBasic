@@ -147,7 +147,7 @@ class CExpr {
 
   std::string printf(const std::string &fmt, const CExprValueArray &values) const;
 
-  void errorMsg(const std::string &msg) const;
+  virtual void errorMsg(const std::string &msg) const;
 
 #ifdef PET_EXPR
   virtual CExprValuePtr variableSubscript(const std::string &name,

@@ -21,10 +21,12 @@ CQPetBasicDbg::
 CQPetBasicDbg(CQPetBasic *basic) :
  basic_(basic)
 {
+  setObjectName("debug");
+
   auto *layout = CQUtil::makeLayout<QVBoxLayout>(this, 2, 2);
 
   area_ = new CQScrollArea;
-  file_ = new CQPetBasicFileView(basic_);
+  file_ = new CQPetBasicFileView(this);
 
   area_->setWidget(file_);
 
@@ -120,8 +122,8 @@ stepSlot()
 //---
 
 CQPetBasicFileView::
-CQPetBasicFileView(CQPetBasic *basic) :
- basic_(basic)
+CQPetBasicFileView(CQPetBasicDbg *dbg) :
+ dbg_(dbg)
 {
   setObjectName("fileView");
 
@@ -154,7 +156,9 @@ mouseDoubleClickEvent(QMouseEvent *e)
   int c = (e->x() - offset_.x())/tw_;
   if (r < 0 || c < 0) return;
 
-  auto *lineData = basic_->getLineIndData(uint(r));
+  auto *basic = dbg_->basic();
+
+  auto *lineData = basic->getLineIndData(uint(r));
   if (! lineData) return;
 
   markers_.clear();
@@ -168,7 +172,9 @@ void
 CQPetBasicFileView::
 paintEvent(QPaintEvent *)
 {
-  auto currentLineNum = basic_->currentLineNum();
+  auto *basic = dbg_->basic();
+
+  auto currentLineNum = basic->currentLineNum();
 
   QPainter painter(this);
 
@@ -180,7 +186,7 @@ paintEvent(QPaintEvent *)
   th_ = fm.height();
   ta_ = fm.ascent();
 
-  auto nl = basic_->maxLine();
+  auto nl = basic->maxLine();
 
   uint lw = uint(std::log10(nl) + 1);
 
@@ -188,10 +194,16 @@ paintEvent(QPaintEvent *)
 
   maxLineLen_ = lw + 1;
 
-  for (const auto &pl : basic_->getLines()) {
+  for (const auto &pl : basic->getLines()) {
     const auto &lineData = pl.second;
 
+    auto isCurrent = (currentLineNum > 0 && lineData.lineN == uint(currentLineNum));
+
+    //---
+
     int x = offset_.x();
+
+    //---
 
     auto lineNumStr = QString::number(lineData.lineN);
 
@@ -200,10 +212,15 @@ paintEvent(QPaintEvent *)
 
     auto marked = (markers_.find(lineData.lineN) != markers_.end());
 
-    if (marked)
-      painter.setPen(Qt::green);
+    if      (marked)
+      painter.setPen(dbg_->markColor());
+    else if (isCurrent) {
+      painter.fillRect(QRect(x, y, tw_*lw, th_), dbg_->currentColor());
+
+      painter.setPen(dbg_->bgColor());
+    }
     else
-      painter.setPen(Qt::black);
+      painter.setPen(dbg_->fgColor());
 
     painter.drawText(x, y + ta_, lineNumStr);
 
@@ -211,13 +228,79 @@ paintEvent(QPaintEvent *)
 
     //---
 
-    auto isCurrent = (currentLineNum > 0 && lineData.lineN == uint(currentLineNum));
+    std::string lineStr;
+    QColor      currentPen;
+    bool        needsSpace = false;
 
-    painter.setPen(isCurrent ? Qt::red : Qt::black);
+    auto drawString = [&](const std::string &str, const QColor &c) {
+      if (currentPen != c) {
+        currentPen = c;
 
-    auto lineStr = basic_->lineToString(lineData, /*highlight*/false);
+        painter.setPen(currentPen);
+      }
 
-    painter.drawText(x, y + ta_, QString::fromStdString(lineStr));
+      lineStr += str;
+
+      painter.drawText(x, y + ta_, QString::fromStdString(str));
+
+      x += fm.horizontalAdvance(QString::fromStdString(str));
+    };
+
+    auto addSpace = [&]() {
+      if (needsSpace) {
+        drawString(" ", dbg_->fgColor());
+
+        needsSpace = false;
+      }
+    };
+
+    //---
+
+    uint is = 0;
+
+    for (const auto &statement : lineData.statements) {
+      if (is > 0)
+        drawString(":", dbg_->fgColor());
+
+      for (auto *token : statement.tokens) {
+        if      (token->type() == CPetBasic::TokenType::STRING) {
+          addSpace();
+
+          drawString("\"" + CPetBasic::decodeEmbeddedStr(token->toString()) + "\"",
+                     dbg_->stringColor());
+        }
+        else if (token->type() == CPetBasic::TokenType::KEYWORD) {
+          addSpace();
+
+          drawString(token->exprString(), dbg_->keywordColor());
+
+          if (token->toString() != "")
+            drawString(" " + token->toString(), dbg_->fgColor());
+          else
+            needsSpace = true;
+        }
+        else if (token->type() == CPetBasic::TokenType::OPERATOR) {
+          addSpace();
+
+          auto str = token->toString();
+
+          drawString(str, dbg_->operatorColor());
+
+          if (isalpha(str[0]))
+            needsSpace = true;
+        }
+        else {
+          auto str = token->toString();
+
+          if (! str.empty() && str[0] != ' ')
+            addSpace();
+
+          drawString(token->toString(), dbg_->fgColor());
+        }
+      }
+
+      ++is;
+    }
 
     y += th_;
 
@@ -236,14 +319,16 @@ QSize
 CQPetBasicFileView::
 dataSize() const
 {
+  auto *basic = dbg_->basic();
+
   QFontMetrics fm(font());
 
   tw_ = fm.horizontalAdvance("X");
   th_ = fm.height();
 
-  auto nl = basic_->numLines();
+  auto nl = basic->numLines();
 
-  return QSize(80*tw_, nl*th_);
+  return QSize(maxLineLen_*tw_, nl*th_);
 }
 
 QSize

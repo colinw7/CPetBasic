@@ -150,17 +150,31 @@ class CPetBasic {
 
   enum class KeywordType {
     NONE,
+    APPEND,
+    BACKUP,
     CLOSE,
     CLR,
+    CMD,
+    COLLECT,
+    CONCAT,
     CONT,
+    COPY,
     DATA,
+    DCLOSE,
+    DEF,
     DELAY, // custom command
     DIM,
+    DIRECTORY,
+    DLOAD,
+    DOPEN,
+    DSAVE,
     END,
+    FN,
     FOR,
     GET,
     GOSUB,
     GOTO,
+    HEADER,
     IF,
     INPUT,
     LET,
@@ -174,11 +188,14 @@ class CPetBasic {
     POKE,
     PRINT,
     READ,
+    RECORD,
     REM,
+    RENAME,
     RESTORE,
     RETURN,
     RUN,
     SAVE,
+    SCRATCH,
     STEP,
     STOP,
     SYS,
@@ -239,18 +256,19 @@ class CPetBasic {
 
   using Lines = std::map<uint, LineData>;
 
+  struct FunctionData {
+    std::string              name;
+    std::vector<std::string> args;
+    Tokens                   tokens;
+  };
+
+  using Functions = std::map<std::string, FunctionData>;
  public:
   CPetBasic();
 
   virtual ~CPetBasic();
 
   //---
-
-  bool isReplaceEmbedded() const { return replaceEmbedded_; }
-  void setReplaceEmbedded(bool b) { replaceEmbedded_ = b; }
-
-  bool isEmbeddedEscapes() const { return embeddedEscapes_; }
-  void setEmbeddedEscapes(bool b) { embeddedEscapes_ = b; }
 
   bool isListHighlight() const { return listHighlight_; }
   void setListHighlight(bool b) { listHighlight_ = b; }
@@ -272,6 +290,8 @@ class CPetBasic {
   CPetBasicExpr *expr() const;
 
   //---
+
+  void initExpr();
 
   bool loadFile(const std::string &fileName);
 
@@ -358,7 +378,7 @@ class CPetBasic {
 
   bool hasArrayVariable(const std::string &name) const;
 
-  void addArrayVariable(const std::string &name);
+  void addArrayVariable(const std::string &name, int ndim);
 
   CExprValuePtr getVariableValue(const std::string &name, const Inds &inds);
   bool setVariableValue(const std::string &name, const Inds &inds, const CExprValuePtr &value);
@@ -374,12 +394,16 @@ class CPetBasic {
 
   //---
 
+  void defineFunction(const std::string &fnName, const std::vector<std::string> &args,
+                      const Tokens &tokens);
+
+  bool getFunction(const std::string &fnName, FunctionData &data) const;
+
+  //---
+
   static CPetsciChar drawCharToPet(const CPetDrawChar &drawChar);
   static CPetDrawChar petToDrawChar(const CPetsciChar &pet);
 
-#if 0
-  static CPetsciChar decodeEmbedded(CAsciiChar c);
-#endif
   static std::string decodeEmbeddedStr(const std::string &s);
   static std::string decodeEmbeddedChar(uchar c);
 
@@ -551,10 +575,16 @@ class CPetBasic {
    public:
     NumberToken(const CPetBasic *b, const std::string &str) :
      CPetBasicToken(b, TokenType::NUMBER, str) {
-      ivalue_ = std::stol(str_);
       rvalue_ = std::stod(str_);
 
-      isReal_ = (rvalue_ != double(ivalue_));
+      try {
+        ivalue_ = std::stol(str_);
+        isReal_ = (rvalue_ != double(ivalue_));
+      }
+      catch (...) {
+        ivalue_ = int(rvalue_);
+        isReal_ = true;
+      }
     }
 
     long   toInteger() const override { return ivalue(); }
@@ -592,12 +622,18 @@ class CPetBasic {
       return tokens_[it_++];
     }
 
+    Token *prevToken() {
+      if (atStart()) return nullptr;
+      return tokens_[--it_];
+    }
+
     Token *currentToken() {
       if (atEnd()) return nullptr;
       return tokens_[it_];
     }
 
-    bool atEnd() const { return (it_ >= nt_); }
+    bool atStart() const { return (it_ == 0); }
+    bool atEnd  () const { return (it_ >= nt_); }
 
    private:
     Tokens tokens_;
@@ -605,10 +641,45 @@ class CPetBasic {
     uint   nt_ { 0 };
   };
 
+  struct LineRef {
+    uint lineNum { 0 };
+    uint statementNum { 0 };
+
+    LineRef() { }
+
+    LineRef(uint lineNum_, uint statementNum_=0) :
+     lineNum(lineNum_), statementNum(statementNum_) {
+    }
+
+    int cmp(const LineRef &lineRef) const {
+      if (lineNum < lineRef.lineNum) return -1;
+      if (lineNum > lineRef.lineNum) return  1;
+      if (statementNum < lineRef.statementNum) return -1;
+      if (statementNum > lineRef.statementNum) return  1;
+      return 0;
+    }
+
+    friend bool operator<(const LineRef &lhs, const LineRef &rhs) {
+      return (lhs.cmp(rhs) < 0);
+    }
+
+    friend bool operator>(const LineRef &lhs, const LineRef &rhs) {
+      return (lhs.cmp(rhs) > 0);
+    }
+
+    friend bool operator==(const LineRef &lhs, const LineRef &rhs) {
+      return (lhs.cmp(rhs) == 0);
+    }
+
+    std::string toString() const {
+     return std::to_string(lineNum) + ":" + std::to_string(statementNum);
+    }
+  };
+
  private:
   void processLineData(LineData &lineData) const;
 
-  bool parseLine(const std::string &line, uint lineNum, Tokens &tokens) const;
+  bool parseLineTokens(const std::string &line, LineData &lineData) const;
 
   void listLine(const LineData &lineData) const;
 
@@ -695,34 +766,53 @@ class CPetBasic {
 
   //---
 
-  bool closeStatement  (TokenList &tokenList);
-  bool clrStatement    (TokenList &tokenList);
-  bool contStatement   (TokenList &tokenList);
-  bool dataStatement   (const std::string &str);
-  bool delayStatement  (TokenList &tokenList);
-  bool dimStatement    (TokenList &tokenList);
-  bool endStatement    (TokenList &tokenList);
-  bool forStatement    (uint lineNum, TokenList &tokenList);
-  bool getStatement    (TokenList &tokenList);
-  bool gosubStatement  (TokenList &tokenList);
-  bool gotoStatement   (TokenList &tokenList);
-  bool ifStatement     (int lineN, TokenList &tokenList, bool &nextLine);
-  bool inputStatement  (TokenList &tokenList);
-  bool letStatement    (TokenList &tokenList);
-  bool listStatement   (TokenList &tokenList);
-  bool loadStatement   (TokenList &tokenList);
-  bool newStatement    (TokenList &tokenList);
-  bool nextStatement   (TokenList &tokenList);
-  bool onStatement     (TokenList &tokenList);
-  bool openStatement   (TokenList &tokenList);
-  bool pokeStatement   (TokenList &tokenList);
-  bool printStatement  (TokenList &tokenList);
-  bool readStatement   (TokenList &tokenList);
-  bool restoreStatement(TokenList &tokenList);
-  bool returnStatement (TokenList &tokenList);
-  bool runStatement    (TokenList &tokenList);
-  bool saveStatement   (TokenList &tokenList);
-  bool stopStatement   (TokenList &tokenList);
+  bool appendStatement   (TokenList &tokenList);
+  bool backupStatement   (TokenList &tokenList);
+  bool closeStatement    (TokenList &tokenList);
+  bool clrStatement      (TokenList &tokenList);
+  bool cmdStatement      (TokenList &tokenList);
+  bool collectStatement  (TokenList &tokenList);
+  bool concatStatement   (TokenList &tokenList);
+  bool contStatement     (TokenList &tokenList);
+  bool copyStatement     (TokenList &tokenList);
+  bool dataStatement     (const std::string &str);
+  bool dcloseStatement   (TokenList &tokenList);
+  bool defStatement      (TokenList &tokenList);
+  bool delayStatement    (TokenList &tokenList);
+  bool dimStatement      (TokenList &tokenList);
+  bool directoryStatement(TokenList &tokenList);
+  bool dloadStatement    (TokenList &tokenList);
+  bool dopenStatement    (TokenList &tokenList);
+  bool dsaveStatement    (TokenList &tokenList);
+  bool endStatement      (TokenList &tokenList);
+  bool forStatement      (const LineRef &lineRef, TokenList &tokenList);
+  bool getStatement      (TokenList &tokenList);
+  bool gosubStatement    (TokenList &tokenList);
+  bool gotoStatement     (TokenList &tokenList);
+  bool headerStatement   (TokenList &tokenList);
+  bool ifStatement       (const LineRef &lineRef, TokenList &tokenList, bool &nextLine);
+  bool inputStatement    (TokenList &tokenList);
+  bool letStatement      (TokenList &tokenList);
+  bool listStatement     (TokenList &tokenList);
+  bool loadStatement     (TokenList &tokenList);
+  bool newStatement      (TokenList &tokenList);
+  bool nextStatement     (const LineRef &lineRef, TokenList &tokenList);
+  bool onStatement       (TokenList &tokenList);
+  bool openStatement     (TokenList &tokenList);
+  bool pokeStatement     (TokenList &tokenList);
+  bool printStatement    (TokenList &tokenList);
+  bool readStatement     (TokenList &tokenList);
+  bool recordStatement   (TokenList &tokenList);
+  bool renameStatement   (TokenList &tokenList);
+  bool restoreStatement  (TokenList &tokenList);
+  bool returnStatement   (TokenList &tokenList);
+  bool runStatement      (TokenList &tokenList);
+  bool saveStatement     (TokenList &tokenList);
+  bool scratchStatement  (TokenList &tokenList);
+  bool stopStatement     (TokenList &tokenList);
+  bool sysStatement      (TokenList &tokenList);
+  bool verifyStatement   (TokenList &tokenList);
+  bool waitStatement     (TokenList &tokenList);
 
   //---
 
@@ -733,10 +823,21 @@ class CPetBasic {
 
   //---
 
+  void gotoLine(const LineRef &lineRef);
+
+  void pushLine(int lineNum);
+  bool popLine();
+
+  //---
+
+  void removeForData(uint ind);
+
+  //---
+
   void initRunData();
   void initRunState();
 
-  void setLineInd(int ind);
+  void setLineInd(int lineInd, int statementNum);
 
   //---
 
@@ -746,8 +847,8 @@ class CPetBasic {
   //---
 
  private:
-  CExprValuePtr evalExpr(const Tokens &tokens) const;
-  CExprValuePtr evalExpr(const std::string &str) const;
+  bool evalExpr(const Tokens &tokens, CExprValuePtr &value) const;
+  bool evalExpr(const std::string &str, CExprValuePtr &value) const;
 
   int getLineInd(uint lineNum) const;
 
@@ -757,6 +858,7 @@ class CPetBasic {
 
   //---
 
+ public:
   void warnMsg(const std::string &msg) const;
   bool errorMsg(const std::string &msg) const;
 
@@ -767,23 +869,61 @@ class CPetBasic {
   using LineNums = std::vector<uint>;
   using LineInds = std::map<uint, uint>;
 
-  struct ForData {
-    std::string   varName_;
-    CExprValuePtr toVal_;
-    CExprValuePtr stepVal_;
-    uint          lineNum_ { 0 };
-
+  class ForData {
+   public:
     ForData() { }
 
     ForData(const std::string &varName, const CExprValuePtr &toVal,
-            const CExprValuePtr &stepVal, uint lineNum) :
-     varName_(varName), toVal_(toVal), stepVal_(stepVal), lineNum_(lineNum) {
+            const CExprValuePtr &stepVal, const LineRef &lineRef,
+            const LineRef &nextLineRef) :
+     varName_(varName), toVal_(toVal), stepVal_(stepVal), lineRef_(lineRef),
+     nextLineRef_(nextLineRef) {
     }
+
+    const std::string &varName() const { return varName_; }
+
+    const CExprValuePtr &toVal() const { return toVal_; }
+
+    const CExprValuePtr &stepVal() const { return stepVal_; }
+
+    const LineRef &lineRef() const { return lineRef_; }
+
+    int lineNum     () const { return lineRef_.lineNum; }
+    int statementNum() const { return lineRef_.statementNum; }
+
+    const LineRef &nextLineRef() const { return nextLineRef_; }
+
+    int nextLineNum     () const { return nextLineRef_.lineNum; }
+    int nextStatementNum() const { return nextLineRef_.statementNum; }
+
+   private:
+    std::string   varName_;
+    CExprValuePtr toVal_;
+    CExprValuePtr stepVal_;
+    LineRef       lineRef_;
+    LineRef       nextLineRef_;
   };
 
-  using ForDatas = std::map<std::string, ForData>;
+  using ForNames = std::map<std::string, int>;
+  using ForDatas = std::vector<ForData>;
 
-  using LineStack = std::vector<uint>;
+  using LineStack = std::vector<LineRef>;
+
+  //---
+
+  struct ForRefData {
+    LineRef     line;
+    std::string varName;
+
+    ForRefData() { }
+
+    ForRefData(const LineRef &line_) : line(line_) { }
+  };
+
+  mutable std::vector<ForRefData> forStack_;
+  mutable std::vector<ForRefData> nextStack_;
+
+  //---
 
   using DataValues = std::vector<CExprValuePtr>;
 
@@ -796,8 +936,6 @@ class CPetBasic {
   std::string fileName_;
   bool        debug_           { false };
   bool        listHighlight_   { false };
-  bool        replaceEmbedded_ { false };
-  bool        embeddedEscapes_ { false };
   bool        splitStatements_ { false };
 
   mutable NameKeywordMap nameKeywords_;
@@ -808,6 +946,8 @@ class CPetBasic {
   LineNums lineNums_;
   LineInds lineInds_;
   int      lineInd_ { -1 };
+
+  uint statementNum_ { 0 };
 
   int breakLineNum_ { -1 };
 
@@ -850,6 +990,11 @@ class CPetBasic {
   using VariableNames = std::set<std::string>;
 
   VariableNames variableNames_;
+
+  //---
+
+
+  Functions functions_;
 
   //---
 

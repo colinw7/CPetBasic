@@ -143,9 +143,13 @@ enterLoopStr(const std::string &str)
   inputBuffer_ += str;
 
   if (isLoopChar()) {
-    auto c = inputBuffer_[0];
+    char c = '\0';
 
-    inputBuffer_ = inputBuffer_.substr(1);
+    if (! inputBuffer_.empty()) {
+      c = inputBuffer_[0];
+
+      inputBuffer_ = inputBuffer_.substr(1);
+    }
 
     loopData_.loopC    = c;
     loopData_.loopChar = false;

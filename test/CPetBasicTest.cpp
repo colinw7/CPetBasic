@@ -7,32 +7,23 @@ main(int argc, char **argv)
 
   FileNames fileNames;
 
-  bool list             = false;
-  bool replace_embedded = false;
-  bool highlight        = false;
-  bool run              = false;
-  bool loop             = false;
-  bool raw              = false;
-  bool debug            = false;
+  bool list      = false;
+  bool highlight = false;
+  bool run       = false;
+  bool loop      = false;
+  bool raw       = false;
+  bool debug     = false;
 
   for (int i = 1; i < argc; ++i) {
     if (argv[i][0] == '-') {
       auto arg = std::string(&argv[i][1]);
 
-      if      (arg == "list")
-        list = true;
-      else if (arg == "replace_embedded")
-        replace_embedded = true;
-      else if (arg == "highlight")
-        highlight = true;
-      else if (arg == "run")
-        run = true;
-      else if (arg == "loop")
-        loop = true;
-      else if (arg == "raw")
-        raw = true;
-      else if (arg == "debug")
-        debug = true;
+      if      (arg == "list"     ) list      = true;
+      else if (arg == "highlight") highlight = true;
+      else if (arg == "run"      ) run       = true;
+      else if (arg == "loop"     ) loop      = true;
+      else if (arg == "raw"      ) raw       = true;
+      else if (arg == "debug"    ) debug     = true;
     }
     else
       fileNames.push_back(argv[i]);
@@ -40,7 +31,6 @@ main(int argc, char **argv)
 
   CPetBasic basic;
 
-  basic.setReplaceEmbedded(replace_embedded);
   basic.setListHighlight(highlight);
 
   if (raw)

@@ -504,7 +504,8 @@ compiler_clean: compiler_moc_predefs_clean compiler_moc_header_clean
 ../obj/main.o: main.cpp CQPetBasicApp.h \
 		CQPetBasic.h \
 		../include/CPetBasic.h \
-		../include/Expr/CExprTypes.h
+		../include/Expr/CExprTypes.h \
+		../../CQUtil/include/CQApp.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o ../obj/main.o main.cpp
 
 ../obj/CQPetBasicApp.o: CQPetBasicApp.cpp CQPetBasicApp.h \

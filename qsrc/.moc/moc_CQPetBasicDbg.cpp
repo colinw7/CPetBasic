@@ -22,8 +22,8 @@ QT_BEGIN_MOC_NAMESPACE
 QT_WARNING_PUSH
 QT_WARNING_DISABLE_DEPRECATED
 struct qt_meta_stringdata_CQPetBasicDbg_t {
-    QByteArrayData data[7];
-    char stringdata0[75];
+    QByteArrayData data[14];
+    char stringdata0[153];
 };
 #define QT_MOC_LITERAL(idx, ofs, len) \
     Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
@@ -38,12 +38,21 @@ QT_MOC_LITERAL(2, 31, 0), // ""
 QT_MOC_LITERAL(3, 32, 14), // "updateFileSize"
 QT_MOC_LITERAL(4, 47, 8), // "playSlot"
 QT_MOC_LITERAL(5, 56, 9), // "pauseSlot"
-QT_MOC_LITERAL(6, 66, 8) // "stepSlot"
+QT_MOC_LITERAL(6, 66, 8), // "stepSlot"
+QT_MOC_LITERAL(7, 75, 7), // "bgColor"
+QT_MOC_LITERAL(8, 83, 7), // "fgColor"
+QT_MOC_LITERAL(9, 91, 12), // "keywordColor"
+QT_MOC_LITERAL(10, 104, 11), // "stringColor"
+QT_MOC_LITERAL(11, 116, 13), // "operatorColor"
+QT_MOC_LITERAL(12, 130, 9), // "markColor"
+QT_MOC_LITERAL(13, 140, 12) // "currentColor"
 
     },
     "CQPetBasicDbg\0updateFileOffset\0\0"
     "updateFileSize\0playSlot\0pauseSlot\0"
-    "stepSlot"
+    "stepSlot\0bgColor\0fgColor\0keywordColor\0"
+    "stringColor\0operatorColor\0markColor\0"
+    "currentColor"
 };
 #undef QT_MOC_LITERAL
 
@@ -54,7 +63,7 @@ static const uint qt_meta_data_CQPetBasicDbg[] = {
        0,       // classname
        0,    0, // classinfo
        5,   14, // methods
-       0,    0, // properties
+       7,   46, // properties
        0,    0, // enums/sets
        0,    0, // constructors
        0,       // flags
@@ -74,6 +83,15 @@ static const uint qt_meta_data_CQPetBasicDbg[] = {
     QMetaType::Void,
     QMetaType::Void,
 
+ // properties: name, type, flags
+       7, QMetaType::QColor, 0x00095103,
+       8, QMetaType::QColor, 0x00095103,
+       9, QMetaType::QColor, 0x00095103,
+      10, QMetaType::QColor, 0x00095103,
+      11, QMetaType::QColor, 0x00095103,
+      12, QMetaType::QColor, 0x00095103,
+      13, QMetaType::QColor, 0x00095103,
+
        0        // eod
 };
 
@@ -91,6 +109,38 @@ void CQPetBasicDbg::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _i
         default: ;
         }
     }
+#ifndef QT_NO_PROPERTIES
+    else if (_c == QMetaObject::ReadProperty) {
+        auto *_t = static_cast<CQPetBasicDbg *>(_o);
+        (void)_t;
+        void *_v = _a[0];
+        switch (_id) {
+        case 0: *reinterpret_cast< QColor*>(_v) = _t->bgColor(); break;
+        case 1: *reinterpret_cast< QColor*>(_v) = _t->fgColor(); break;
+        case 2: *reinterpret_cast< QColor*>(_v) = _t->keywordColor(); break;
+        case 3: *reinterpret_cast< QColor*>(_v) = _t->stringColor(); break;
+        case 4: *reinterpret_cast< QColor*>(_v) = _t->operatorColor(); break;
+        case 5: *reinterpret_cast< QColor*>(_v) = _t->markColor(); break;
+        case 6: *reinterpret_cast< QColor*>(_v) = _t->currentColor(); break;
+        default: break;
+        }
+    } else if (_c == QMetaObject::WriteProperty) {
+        auto *_t = static_cast<CQPetBasicDbg *>(_o);
+        (void)_t;
+        void *_v = _a[0];
+        switch (_id) {
+        case 0: _t->setBgColor(*reinterpret_cast< QColor*>(_v)); break;
+        case 1: _t->setFgColor(*reinterpret_cast< QColor*>(_v)); break;
+        case 2: _t->setKeywordColor(*reinterpret_cast< QColor*>(_v)); break;
+        case 3: _t->setStringColor(*reinterpret_cast< QColor*>(_v)); break;
+        case 4: _t->setOperatorColor(*reinterpret_cast< QColor*>(_v)); break;
+        case 5: _t->setMarkColor(*reinterpret_cast< QColor*>(_v)); break;
+        case 6: _t->setCurrentColor(*reinterpret_cast< QColor*>(_v)); break;
+        default: break;
+        }
+    } else if (_c == QMetaObject::ResetProperty) {
+    }
+#endif // QT_NO_PROPERTIES
 }
 
 QT_INIT_METAOBJECT const QMetaObject CQPetBasicDbg::staticMetaObject = { {
@@ -130,6 +180,23 @@ int CQPetBasicDbg::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
             *reinterpret_cast<int*>(_a[0]) = -1;
         _id -= 5;
     }
+#ifndef QT_NO_PROPERTIES
+    else if (_c == QMetaObject::ReadProperty || _c == QMetaObject::WriteProperty
+            || _c == QMetaObject::ResetProperty || _c == QMetaObject::RegisterPropertyMetaType) {
+        qt_static_metacall(this, _c, _id, _a);
+        _id -= 7;
+    } else if (_c == QMetaObject::QueryPropertyDesignable) {
+        _id -= 7;
+    } else if (_c == QMetaObject::QueryPropertyScriptable) {
+        _id -= 7;
+    } else if (_c == QMetaObject::QueryPropertyStored) {
+        _id -= 7;
+    } else if (_c == QMetaObject::QueryPropertyEditable) {
+        _id -= 7;
+    } else if (_c == QMetaObject::QueryPropertyUser) {
+        _id -= 7;
+    }
+#endif // QT_NO_PROPERTIES
     return _id;
 }
 struct qt_meta_stringdata_CQPetBasicFileView_t {

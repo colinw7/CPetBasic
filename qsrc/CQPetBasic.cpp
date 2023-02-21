@@ -12,7 +12,6 @@ CQPetBasic::
 CQPetBasic(CQPetBasicApp *app) :
  app_(app)
 {
-  setReplaceEmbedded(true);
 }
 
 void
