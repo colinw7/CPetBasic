@@ -2004,6 +2004,7 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
         break;
       case KeywordType::RETURN:
         rc = returnStatement(tokenList);
+        nextLine = false;
         break;
       case KeywordType::RUN:
         rc = runStatement(tokenList);
@@ -2853,7 +2854,7 @@ gosubStatement(TokenList &tokenList)
   auto lineInd = getLineInd(lineNum);
   if (lineInd < 0) return errorMsg("Invalid GOSUB line");
 
-  pushLine(lineNum);
+  pushLine(LineRef(lineNum));
 
   return true;
 }
@@ -3303,7 +3304,7 @@ onStatement(TokenList &tokenList)
     return errorMsg("Invalid ON line '" + std::to_string(lineNum) + "'");
 
   if (gosubFlag)
-    pushLine(lineNum);
+    pushLine(LineRef(lineNum));
   else
     gotoLine(LineRef(lineNum));
 
@@ -3777,25 +3778,38 @@ gotoLine(const LineRef &lineRef)
       ++i;
   }
 
+  //---
+
   auto lineInd = getLineInd(lineRef.lineNum);
 
-  setLineInd(lineInd, lineRef.statementNum);
+  auto pl = lines_.find(lineRef.lineNum);
+  assert(pl != lines_.end());
+
+  auto statementNum = lineRef.statementNum;
+
+  if (lineRef.statementNum >= (*pl).second.statements.size()) {
+    ++lineInd;
+
+    statementNum = 0;
+  }
+
+  setLineInd(lineInd, statementNum);
 }
 
 void
 CPetBasic::
-pushLine(int lineNum)
+pushLine(const LineRef &lineRef)
 {
   int retLineNum = lineIndNum(lineInd_);
 
-//std::cerr << "GOSUB " << lineNum << ":0" <<
+//std::cerr << "GOSUB " << lineRef.lineNum << ":0" <<
 //             " FROM " << retLineNum << ":" << statementNum_ << "\n";
 
-  auto lineRef = LineRef(retLineNum, statementNum_ + 1);
+  auto retLineRef = LineRef(retLineNum, statementNum_ + 1);
 
-  lineStack_.push_back(lineRef);
+  lineStack_.push_back(retLineRef);
 
-  gotoLine(LineRef(lineNum, 0));
+  gotoLine(lineRef);
 }
 
 bool
