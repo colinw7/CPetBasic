@@ -51,6 +51,15 @@ init()
 
   //---
 
+  // cursor blink timer
+  updateTimer_ = new QTimer(this);
+
+  CQUtil::defConnect(updateTimer_, this, SLOT(updateTimeout()));
+
+  updateTimer_->start(250);
+
+  //---
+
   // loop timer
   loopData_.loopTimer = new QTimer(this);
   loopData_.loopTimer->setSingleShot(true);
@@ -280,6 +289,20 @@ drawString(const std::string &str)
 
 //---
 
+bool
+CQPetBasicTerm::
+drawPoint(long x, long y, long c)
+{
+  if (image_)
+    image_->setPixel(x, y, qRgba(c, c, c, 255));
+
+  needsUpdate_ = true;
+
+  return true;
+}
+
+//---
+
 void
 CQPetBasicTerm::
 update()
@@ -305,8 +328,19 @@ cursorTimeout()
 {
   cursorBlink_ = ! cursorBlink_;
 
-  update();
+  updateTimeout();
 }
+
+void
+CQPetBasicTerm::
+updateTimeout()
+{
+  update();
+
+  needsUpdate_ = false;
+}
+
+//---
 
 void
 CQPetBasicTerm::
@@ -439,6 +473,17 @@ keyReleaseEvent(QKeyEvent *e)
 
 void
 CQPetBasicTerm::
+resizeEvent(QResizeEvent *)
+{
+  delete image_;
+
+  image_ = new QImage(width(), height(), QImage::Format_ARGB32);
+
+  image_->fill(QColor(0, 0, 0, 0).rgba());
+}
+
+void
+CQPetBasicTerm::
 paintEvent(QPaintEvent *)
 {
   QFontMetricsF fm(font());
@@ -450,6 +495,13 @@ paintEvent(QPaintEvent *)
   QPainter painter(this);
 
   painter.fillRect(rect(), Qt::black);
+
+  //---
+
+  if (image_)
+    painter.drawImage(0, 0, *image_);
+
+  //---
 
   double y = 0;
 
@@ -468,7 +520,7 @@ paintEvent(QPaintEvent *)
         painter.setPen(Qt::white);
       }
 
-      if (r == r_ && c == c_) {
+      if (int(r) == r_ && int(c) == c_) {
         if (cursorBlink_)
           painter.fillRect(QRect(x, y, cw_, ch_), Qt::yellow);
       }

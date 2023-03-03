@@ -19,12 +19,15 @@ class CQPetBasicVariables : public QFrame {
 
   void reload();
 
+  void showEvent(QShowEvent *) override;
+
   QSize sizeHint() const override;
 
  private:
-  CQPetBasicApp*           app_   { nullptr };
-  CQPetBasicVariablesList* view_  { nullptr };
-  CQDataModel*             model_ { nullptr };
+  CQPetBasicApp*           app_         { nullptr };
+  CQPetBasicVariablesList* view_        { nullptr };
+  CQDataModel*             model_       { nullptr };
+  bool                     needsReload_ { true };
 };
 
 class CQPetBasicVariablesList : public CQModelView {

@@ -55,6 +55,8 @@ class CQPetBasicDbg : public QFrame {
 
   void scrollVisible();
 
+  void showEvent(QShowEvent *) override;
+
  private Q_SLOTS:
   void updateFileOffset();
   void updateFileSize(const QSize &);
@@ -94,6 +96,8 @@ class CQPetBasicFileView : public QFrame {
   int markerLineNum() const;
 
   QPoint lineIndPos(int lineInd) const;
+
+  void requestUpdate();
 
   void resizeEvent(QResizeEvent *) override;
 

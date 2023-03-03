@@ -305,7 +305,7 @@ enter()
 
   cursorLeftFull();
 
-  if (row() >= numRows())
+  if (row() >= int(numRows()))
     scrollUp();
 
   if (! isRaw())
@@ -388,11 +388,9 @@ bool
 CPetBasicRawTerm::
 drawChar(const CPetDrawChar &drawChar)
 {
-  if (r_ >= nr_ || c_ >= nc_) return false;
+  if (r_ >= int(nr_) || c_ >= int(nc_)) return false;
 
-  auto i = encodeCharPos(r_, c_);
-
-  chars_[i] = drawChar;
+  setChar(r_, c_, drawChar);
 
   if (isRaw())
     COSRead::write(STDOUT_FILENO, CEscape::CUP(r_ + 1, c_ + 1));
@@ -432,7 +430,7 @@ update()
 
     for (uint r = 0; r < nr_; ++r) {
       for (uint c = 0; c < nc_; ++c) {
-        bool isCursor = (r == r_ && c == c_);
+        bool isCursor = (int(r) == r_ && int(c) == c_);
 
         if (isCursor)
           COSRead::write(STDOUT_FILENO, CEscape::SGR(43));

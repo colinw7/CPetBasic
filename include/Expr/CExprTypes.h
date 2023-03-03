@@ -68,15 +68,16 @@ enum class CExprTokenType {
 
   NONE = 0,
 
-  IDENTIFIER         = 1,
-  OPERATOR           = 2,
-  INTEGER            = 4,
-  REAL               = 5,
-  STRING             = 6,
-  COMPLEX            = 7,
-  FUNCTION           = 8,
-  VALUE              = 9,
-  BLOCK              = 10,
+  IDENTIFIER = 1,
+  OPERATOR   = 2,
+  INTEGER    = 4,
+  REAL       = 5,
+  STRING     = 6,
+  COMPLEX    = 7,
+  FUNCTION   = 8,
+  VALUE      = 9,
+  BLOCK      = 10,
+
 #ifdef PET_EXPR
   VARIABLE_SUBSCRIPT = 11
 #endif

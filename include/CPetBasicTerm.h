@@ -27,8 +27,8 @@ class CPetBasicTerm {
 
   //---
 
-  virtual uint row() const { return r_; }
-  virtual uint col() const { return c_; }
+  virtual int row() const { return r_; }
+  virtual int col() const { return c_; }
 
   virtual uint numRows() const { return nr_; }
   virtual uint numCols() const { return nc_; }
@@ -42,8 +42,10 @@ class CPetBasicTerm {
   virtual CPetDrawChar getChar(uint r, uint c) const;
   virtual void setChar(uint r, uint c, const CPetDrawChar &drawChar);
 
-  uint encodeCharPos(uint r, uint c) const { return r*nc_ + c; }
-  void decodeCharPos(uint pos, uint &r, uint &c) const { r = pos/nc_; c = pos - r*nc_; }
+  uint encodeCharPos(uint r, uint c) const {
+    assert(r < nr_ && c < nc_); return r*nc_ + c; }
+  void decodeCharPos(uint pos, uint &r, uint &c) const {
+    assert(pos < nr_*nc_); r = pos/nc_; c = pos - r*nc_; }
 
   //---
 
@@ -61,9 +63,9 @@ class CPetBasicTerm {
   virtual void tab();
 
   virtual void cursorUp();
-  virtual void cursorDown(bool force=false);
+  virtual void cursorDown(bool force=true);
   virtual void cursorLeft();
-  virtual void cursorRight(bool force=false);
+  virtual void cursorRight(bool force=true);
 
   virtual void cursorLeftFull();
 
@@ -82,6 +84,8 @@ class CPetBasicTerm {
   virtual bool drawChar(const uchar &c);
   virtual bool drawChar(const CPetDrawChar &drawChar);
 
+  virtual bool drawPoint(long x, long y, long color);
+
   virtual void update();
 
   //---
@@ -96,8 +100,8 @@ class CPetBasicTerm {
   CPetBasic *basic_ { nullptr };
   uint       nr_    { 25 };
   uint       nc_    { 40 };
-  uint       r_     { 0 };
-  uint       c_     { 0 };
+  int        r_     { 0 };
+  int        c_     { 0 };
   Chars      chars_;
 
   std::string inputBuffer_;

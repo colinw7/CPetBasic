@@ -77,11 +77,13 @@ void
 CQPetBasicDbg::
 scrollVisible()
 {
-  int lineInd = basic_->lineInd();
+  if (isVisible()) {
+    int lineInd = basic_->lineInd();
 
-  auto pos = file_->lineIndPos(lineInd);
+    auto pos = file_->lineIndPos(lineInd);
 
-  area_->ensureVisible(pos.x(), pos.y(), 100, 100);
+    area_->ensureVisible(pos.x(), pos.y(), 100, 100);
+  }
 }
 
 void
@@ -117,6 +119,13 @@ CQPetBasicDbg::
 stepSlot()
 {
   basic_->step();
+}
+
+void
+CQPetBasicDbg::
+showEvent(QShowEvent *)
+{
+  scrollVisible();
 }
 
 //---
@@ -166,6 +175,14 @@ mouseDoubleClickEvent(QMouseEvent *e)
   markers_.insert(lineData->lineN);
 
   update();
+}
+
+void
+CQPetBasicFileView::
+requestUpdate()
+{
+  if (isVisible())
+    update();
 }
 
 void

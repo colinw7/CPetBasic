@@ -6,6 +6,7 @@
 
 #include <COSPty.h>
 #include <COSRead.h>
+#include <COSTimer.h>
 #include <CEscape.h>
 
 #include <termios.h>
@@ -179,7 +180,7 @@ enter()
 
   cursorLeftFull();
 
-  if (row() >= numRows())
+  if (row() >= int(numRows()))
     scrollUp();
 
   if (isTty())
@@ -213,7 +214,7 @@ void
 CPetBasicTerm::
 cursorDown(bool force)
 {
-  if (force || r_ < nr_ - 1) {
+  if (force || r_ < int(nr_) - 1) {
     ++r_;
   }
 }
@@ -235,9 +236,9 @@ CPetBasicTerm::
 cursorRight(bool force)
 {
   if (! force) {
-    if      (c_ < nc_ - 1)
+    if      (c_ < int(nc_) - 1)
       ++c_;
-    else if (r_ < nr_ - 1) {
+    else if (r_ < int(nr_) - 1) {
       c_ = 0;
       ++r_;
     }
@@ -297,7 +298,7 @@ inQuotes() const
 
   int nq = 0;
 
-  for (uint c = 0; c < c_; ++c) {
+  for (int c = 0; c < c_; ++c) {
     auto drawChar = getChar(r_, c);
 
     if (drawChar.c() == '"')
@@ -313,16 +314,12 @@ bool
 CPetBasicTerm::
 drawChar(const uchar &c)
 {
-  if (r_ >= nr_ || c_ >= nc_) return false;
+  if (r_ >= int(nr_) || c_ >= int(nc_)) return false;
 
-  auto i = encodeCharPos(r_, c_);
-
-  chars_[i] = CPetDrawChar(c, 0, basic()->isReverse());
+  setChar(r_, c_, CPetDrawChar(c, 0, basic()->isReverse()));
 
   if (isTty())
     std::cout << c;
-
-  update();
 
   return true;
 }
@@ -331,11 +328,9 @@ bool
 CPetBasicTerm::
 drawChar(const CPetDrawChar &drawChar)
 {
-  if (r_ >= nr_ || c_ >= nc_) return false;
+  if (r_ >= int(nr_) || c_ >= int(nc_)) return false;
 
-  auto i = encodeCharPos(r_, c_);
-
-  chars_[i] = drawChar;
+  setChar(r_, c_, drawChar);
 
   if (isTty()) {
     if (drawChar.utf()) {
@@ -350,8 +345,15 @@ drawChar(const CPetDrawChar &drawChar)
     }
   }
 
-  update();
+  return true;
+}
 
+//---
+
+bool
+CPetBasicTerm::
+drawPoint(long, long, long)
+{
   return true;
 }
 
@@ -365,7 +367,7 @@ enterLine()
 
   int nq = 0;
 
-  for (uint c = 0; c < c_; ++c) {
+  for (int c = 0; c < c_; ++c) {
     auto drawChar = getChar(r_, c);
 
     if (drawChar.c() == '"')
@@ -419,6 +421,7 @@ update()
 
 void
 CPetBasicTerm::
-delay(long)
+delay(long t)
 {
+  COSTimer::milli_sleep(uint(t));
 }

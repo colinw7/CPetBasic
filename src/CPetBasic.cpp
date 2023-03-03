@@ -8,12 +8,16 @@
 #include <CReadLine.h>
 #include <COSRand.h>
 #include <COSRead.h>
+#include <COSTime.h>
 
 #include <algorithm>
 #include <cmath>
 #include <sstream>
 #include <termios.h>
 #include <unistd.h>
+
+//static int s_num_basic_tokens_created = 0;
+//static int s_num_basic_tokens_deleted = 0;
 
 class CPetBasicExpr : public CExpr {
  public:
@@ -48,6 +52,9 @@ class CPetBasicExpr : public CExpr {
 
       val = th->createIntegerValue(0);
     }
+
+    //std::cerr << "variableSubscript: " << name << " "; basic_->printInds(inds1);
+    //std::cerr << " "; val->print(std::cerr); std::cerr << "\n";
 
     return val;
   }
@@ -290,9 +297,12 @@ class CPetBasicMidFunction : public CPetBasicFunction {
     if (! values[0]->getStringValue(s) ||
         ! values[1]->getIntegerValue(i) ||
         ! values[2]->getIntegerValue(n))
-      return errorMsg("Wrong argument type");
+      return errorMsg("Wrong argument type for MID$");
 
-    auto s1 = s.substr(i, n);
+    if (i < 1 || i > int(s.size()))
+      return errorMsg("Outof range for MID$");
+
+    auto s1 = s.substr(i - 1, n);
 
     return expr_->createStringValue(s1);
   }
@@ -659,7 +669,12 @@ CPetBasic()
 CPetBasic::
 ~CPetBasic()
 {
+  clearLines();
+
   delete term_;
+
+//std::cerr << "Num Basic Tokens " << s_num_basic_tokens_created <<
+//             " " << s_num_basic_tokens_deleted << "\n";
 }
 
 void
@@ -953,6 +968,37 @@ parseLineTokens(const std::string &line, LineData &lineData) const
 
       flushToken(TokenType::OPERATOR);
     }
+    else if (parse.isDigit() ||
+             (parse.isChar('.') && parse.isDigitAt(1)) ||
+             (parse.isChar('-') && parse.isDigitAt(1))) {
+      flushToken();
+
+      if (parse.isChar('-'))
+        tokenStr += parse.readChar();
+
+      if (parse.isChar('.'))
+        tokenStr += parse.readChar();
+
+      while (! parse.eof()) {
+        if (! parse.isDigit())
+          break;
+
+        tokenStr += parse.readChar();
+      }
+
+      if (! parse.eof() && parse.isChar('.')) {
+        tokenStr += parse.readChar();
+
+        while (! parse.eof()) {
+          if (! parse.isDigit())
+            break;
+
+          tokenStr += parse.readChar();
+        }
+      }
+
+      flushToken(TokenType::NUMBER);
+    }
     else if (parse.isOneOf("+-^*/")) {
       flushToken();
 
@@ -1045,32 +1091,6 @@ parseLineTokens(const std::string &line, LineData &lineData) const
       }
 
       flushToken(TokenType::STRING);
-    }
-    else if (parse.isDigit() || (parse.isChar('.') && parse.isDigitAt(1))) {
-      flushToken();
-
-      if (parse.isChar('.'))
-        tokenStr += parse.readChar();
-
-      while (! parse.eof()) {
-        if (! parse.isDigit())
-          break;
-
-        tokenStr += parse.readChar();
-      }
-
-      if (! parse.eof() && parse.isChar('.')) {
-        tokenStr += parse.readChar();
-
-        while (! parse.eof()) {
-          if (! parse.isDigit())
-            break;
-
-          tokenStr += parse.readChar();
-        }
-      }
-
-      flushToken(TokenType::NUMBER);
     }
     else if (parse.isAlpha()) {
       flushToken();
@@ -1437,6 +1457,9 @@ initKeywords() const
 
   if (nameKeywords_.empty()) {
     addKeyword(KeywordType::APPEND   , "APPEND"   );
+#ifdef PET_EXTRA_KEYWORDS
+    addKeyword(KeywordType::ASSERT   , "ASSERT"   );
+#endif
     addKeyword(KeywordType::BACKUP   , "BACKUP"   );
     addKeyword(KeywordType::CLOSE    , "CLOSE"    );
     addKeyword(KeywordType::CLR      , "CLR"      );
@@ -1448,12 +1471,17 @@ initKeywords() const
     addKeyword(KeywordType::DATA     , "DATA"     );
     addKeyword(KeywordType::DCLOSE   , "DCLOSE"   );
     addKeyword(KeywordType::DEF      , "DEF"      );
+#ifdef PET_EXTRA_KEYWORDS
     addKeyword(KeywordType::DELAY    , "DELAY"    );
+#endif
     addKeyword(KeywordType::DIM      , "DIM"      );
     addKeyword(KeywordType::DIRECTORY, "DIRECTORY");
     addKeyword(KeywordType::DLOAD    , "DLOAD"    );
     addKeyword(KeywordType::DOPEN    , "DOPEN"    );
     addKeyword(KeywordType::DSAVE    , "DSAVE"    );
+#ifdef PET_EXTRA_KEYWORDS
+    addKeyword(KeywordType::ELAPSED  , "ELAPSED"  );
+#endif
     addKeyword(KeywordType::END      , "END"      );
     addKeyword(KeywordType::FN       , "FN"       );
     addKeyword(KeywordType::FOR      , "FOR"      );
@@ -1471,6 +1499,9 @@ initKeywords() const
     addKeyword(KeywordType::ON       , "ON"       );
     addKeyword(KeywordType::OPEN     , "OPEN"     );
     addKeyword(KeywordType::PEEK     , "PEEK"     );
+#ifdef PET_EXTRA_KEYWORDS
+    addKeyword(KeywordType::PLOT     , "PLOT"     );
+#endif
     addKeyword(KeywordType::POKE     , "POKE"     );
     addKeyword(KeywordType::PRINT    , "PRINT"    );
     addKeyword(KeywordType::READ     , "READ"     );
@@ -1495,8 +1526,51 @@ void
 CPetBasic::
 list()
 {
-  for (const auto &pl : lines_)
-    listLine(pl.second);
+  list(-1, -1);
+}
+
+void
+CPetBasic::
+list(long startNum, long endNum)
+{
+  //if (startNum < 0) std::cerr << "Start: " << startNum << "\n";
+  //if (endNum   < 0) std::cerr << "End: "   << endNum   << "\n";
+
+  // start num to end
+  if      (startNum > 0 && endNum < 0) {
+    for (const auto &pl : lines_) {
+      const auto &lineData = pl.second;
+
+      if (long(lineData.lineN) >= startNum)
+        listLine(lineData);
+    }
+  }
+  // start to end num
+  else if (startNum < 0 && endNum > 0) {
+    for (const auto &pl : lines_) {
+      const auto &lineData = pl.second;
+
+      if (long(lineData.lineN) <= endNum)
+        listLine(lineData);
+    }
+  }
+  // start num to end num
+  else if (startNum > 0 && endNum > 0) {
+    for (const auto &pl : lines_) {
+      const auto &lineData = pl.second;
+
+      if (long(lineData.lineN) >= startNum && long(lineData.lineN) <= endNum)
+        listLine(lineData);
+    }
+  }
+  // all
+  else {
+    for (const auto &pl : lines_) {
+      const auto &lineData = pl.second;
+
+      listLine(lineData);
+    }
+  }
 }
 
 void
@@ -1645,7 +1719,12 @@ run()
 
   breakLineNum_ = -1;
 
-  return contRun();
+  bool rc = contRun();
+
+  if (term()->col() > 0)
+    term_->enter();
+
+  return rc;
 }
 
 bool
@@ -1826,7 +1905,7 @@ inputLine(const std::string &lineBuffer)
 
 bool
 CPetBasic::
-runLine(const LineData &lineData)
+runLine(LineData &lineData)
 {
   notifyRunLine(lineData.lineN);
 
@@ -1840,9 +1919,18 @@ runLine(const LineData &lineData)
   auto numStatements = lineData.statements.size();
 
   while (statementNum_ < numStatements) {
-    const auto &statement = lineData.statements[statementNum_];
+    auto &statement = lineData.statements[statementNum_];
 
-    if (! runTokens(lineData.lineN, statement.tokens, nextLine))
+    if (! statement.compiled) {
+      if (! compileTokens(statement.tokens, statement.hasCompiled, statement.compiledTokens))
+        return false;
+
+      statement.compiled = true;
+    }
+
+    LineRef lineRef(lineData.lineN, statementNum_);
+
+    if (! runTokens(lineRef, statement.compiledTokens, nextLine))
       return false;
 
     if (! nextLine)
@@ -1859,8 +1947,10 @@ runLine(const LineData &lineData)
 
 bool
 CPetBasic::
-runTokens(int lineN, const Tokens &tokens, bool &nextLine)
+compileTokens(const Tokens &tokens, bool &compiled, Tokens &compiledTokens)
 {
+  compiled = false;
+
   auto nt = tokens.size();
   assert(nt >= 1);
 
@@ -1869,178 +1959,102 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
   auto *token = tokens[it++];
 
   if (token->type() == TokenType::KEYWORD) {
+    compiledTokens.push_back(token);
+
     TokenList tokenList(tokens);
 
     tokenList.skipToken(); // keyword
 
     auto *keyword = static_cast<KeywordToken *>(token);
 
-    bool rc = false;
-
     switch (keyword->keywordType()) {
-      case KeywordType::APPEND:
-        rc = appendStatement(tokenList);
+#ifdef PET_EXTRA_KEYWORDS
+      case KeywordType::ASSERT:
+        compiled = compileAssertStatement(tokenList, compiledTokens);
         break;
-      case KeywordType::BACKUP:
-        rc = backupStatement(tokenList);
-        break;
-      case KeywordType::CLOSE:
-        rc = closeStatement(tokenList);
-        break;
+#endif
       case KeywordType::CLR:
-        rc = clrStatement(tokenList);
-        break;
-      case KeywordType::CMD:
-        rc = cmdStatement(tokenList);
-        break;
-      case KeywordType::COLLECT:
-        rc = collectStatement(tokenList);
-        break;
-      case KeywordType::CONCAT:
-        rc = concatStatement(tokenList);
         break;
       case KeywordType::CONT:
-        rc = contStatement(tokenList);
-        break;
-      case KeywordType::COPY:
-        rc = copyStatement(tokenList);
         break;
       case KeywordType::DATA:
-        rc = dataStatement(token->str());
-        break;
-      case KeywordType::DCLOSE:
-        rc = dcloseStatement(tokenList);
         break;
       case KeywordType::DEF:
-        rc = defStatement(tokenList);
+        compiled = compileDefStatement(tokenList, compiledTokens);
         break;
-      case KeywordType::DELAY: // custom keyword
-        rc = delayStatement(tokenList);
+#ifdef PET_EXTRA_KEYWORDS
+      case KeywordType::DELAY:
+        compiled = compileDelayStatement(tokenList, compiledTokens);
         break;
+#endif
       case KeywordType::DIM:
-        rc = dimStatement(tokenList);
+        compiled = compileDimStatement(tokenList, compiledTokens);
         break;
-      case KeywordType::DIRECTORY:
-        rc = directoryStatement(tokenList);
+#ifdef PET_EXTRA_KEYWORDS
+      case KeywordType::ELAPSED:
         break;
-      case KeywordType::DLOAD:
-        rc = dloadStatement(tokenList);
-        break;
-      case KeywordType::DOPEN:
-        rc = dopenStatement(tokenList);
-        break;
-      case KeywordType::DSAVE:
-        rc = dsaveStatement(tokenList);
-        break;
-      case KeywordType::END:
-        rc = endStatement(tokenList);
-        break;
+#endif
       case KeywordType::FOR:
-        rc = forStatement(LineRef(lineN, statementNum_), tokenList);
+        compiled = compileForStatement(tokenList, compiledTokens);
         break;
       case KeywordType::GET:
-        rc = getStatement(tokenList);
         break;
       case KeywordType::GOSUB:
-        rc = gosubStatement(tokenList);
-        nextLine = false;
+        compiled = compileGosubStatement(tokenList, compiledTokens);
         break;
       case KeywordType::GOTO:
-        rc = gotoStatement(tokenList);
-        nextLine = false;
-        break;
-      case KeywordType::HEADER:
-        rc = headerStatement(tokenList);
+        compiled = compileGotoStatement(tokenList, compiledTokens);
         break;
       case KeywordType::IF:
-        rc = ifStatement(LineRef(lineN, statementNum_), tokenList, nextLine);
+        compiled = compileIfStatement(tokenList, compiledTokens);
         break;
       case KeywordType::INPUT:
-        rc = inputStatement(tokenList);
         break;
       case KeywordType::LET:
-        rc = letStatement(tokenList);
+        compiled = compileLetStatement(tokenList, compiledTokens);
         break;
       case KeywordType::LIST:
-        rc = listStatement(tokenList);
-        break;
-      case KeywordType::LOAD:
-        rc = loadStatement(tokenList);
-        break;
-      case KeywordType::NEW:
-        rc = newStatement(tokenList);
         break;
       case KeywordType::NEXT:
-        rc = nextStatement(LineRef(lineN, statementNum_), tokenList);
-        nextLine = false;
+        compiled = compileNextStatement(tokenList, compiledTokens);
         break;
-      case KeywordType::ON:
-        rc = onStatement(tokenList);
-        nextLine = false;
+#ifdef PET_EXTRA_KEYWORDS
+      case KeywordType::PLOT:
+        compiled = compilePlotStatement(tokenList, compiledTokens);
         break;
-      case KeywordType::OPEN:
-        rc = openStatement(tokenList);
-        break;
+#endif
       case KeywordType::POKE:
-        rc = pokeStatement(tokenList);
+        compiled = compilePokeStatement(tokenList, compiledTokens);
         break;
       case KeywordType::PRINT:
-        rc = printStatement(tokenList);
+        compiled = compilePrintStatement(tokenList, compiledTokens);
         break;
       case KeywordType::READ:
-        rc = readStatement(tokenList);
-        break;
-      case KeywordType::RECORD:
-        rc = recordStatement(tokenList);
+        compiled = compileReadStatement(tokenList, compiledTokens);
         break;
       case KeywordType::REM:
-        rc = true;
-        break;
-      case KeywordType::RENAME:
-        rc = renameStatement(tokenList);
-        break;
-      case KeywordType::RESTORE:
-        rc = restoreStatement(tokenList);
         break;
       case KeywordType::RETURN:
-        rc = returnStatement(tokenList);
-        nextLine = false;
         break;
       case KeywordType::RUN:
-        rc = runStatement(tokenList);
-        break;
-      case KeywordType::SAVE:
-        rc = saveStatement(tokenList);
-        break;
-      case KeywordType::SCRATCH:
-        rc = scratchStatement(tokenList);
         break;
       case KeywordType::STOP:
-        rc = stopStatement(tokenList);
-        break;
-      case KeywordType::SYS:
-        rc = sysStatement(tokenList);
-        break;
-      case KeywordType::VERIFY:
-        rc = verifyStatement(tokenList);
-        break;
-      case KeywordType::WAIT:
-        rc = waitStatement(tokenList);
         break;
       default:
-        warnMsg("Unhandled keyword " + token->listString());
+        std::cerr << "No compile for " << keyword->exprString() << "\n";
         break;
     }
-
-    if (! rc || errorMsg_ != "")
-      return errorMsg(errorMsg_ != "" ? errorMsg_ : "Command failed");
   }
   else if (token->type() == TokenType::VARIABLE) {
+    // get variable token
     auto *varToken = static_cast<VariableToken *>(token);
 
     auto *token1 = (it < nt ? tokens[it++] : nullptr);
 
-    Inds inds;
+    //---
+
+    // get optional index tokens
+    Tokens indExprs;
 
     if (token1 && isSeparator(token1, SeparatorType::OPEN_RBRACKET)) {
       auto *token2 = (it < nt ? tokens[it++] : nullptr);
@@ -2051,22 +2065,21 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
         if (indexTokens.empty())
           return errorMsg("No indices for array variable");
 
-        CExprValuePtr val;
-        if (! evalExpr(indexTokens, val))
+        ExprData exprData;
+        if (! tokensToExpr(indexTokens, exprData))
           return false;
 
-        long i;
-        if (! val->getIntegerValue(i) || i < 0)
-          return errorMsg("Invalid variable index value");
+        auto *exprToken = createExpr(exprData);
 
-        inds.push_back(uint(i));
+        indExprs.push_back(exprToken);
 
         return true;
       };
 
       while (token2 && ! isSeparator(token2, SeparatorType::CLOSE_RBRACKET)) {
         if (isSeparator(token2, SeparatorType::COMMA)) {
-          if (! addInd()) return false;
+          if (! addInd())
+            return false;
 
           indexTokens.clear();
         }
@@ -2088,32 +2101,287 @@ runTokens(int lineN, const Tokens &tokens, bool &nextLine)
       token1 = (it < nt ? tokens[it++] : nullptr);
     }
 
+    auto *indexToken = createTokenList(indExprs);
+
+    // get assign tokens
+    ExprToken *exprToken = nullptr;
+
     if (token1 && isOperator(token1, OperatorType::ASSIGN)) {
       Tokens assignTokens;
 
       for (uint i = it; i < nt; ++i)
         assignTokens.push_back(tokens[i]);
 
-      CExprValuePtr val;
-      if (! evalExpr(assignTokens, val))
+      ExprData exprData;
+      if (! tokensToExpr(assignTokens, exprData))
         return false;
 
-      auto varName = varToken->str();
-
-      if (! inds.empty()) {
-        if (! setVariableValue(varName, inds, val))
-          return errorMsg("Failed to set variable value for '" + varName + "'");
-      }
-      else {
-        if (! setVariableValue(varName, val))
-          return errorMsg("Failed to set variable value for '" + varName + "'");
-      }
+      exprToken = createExpr(exprData);
     }
     else {
       if (token1)
         return errorMsg("Invalid token '" + token1->str() + "'");
       else
         return errorMsg("Invalid token");
+    }
+
+    compiledTokens.push_back(varToken);
+    compiledTokens.push_back(indexToken);
+    compiledTokens.push_back(exprToken);
+
+    compiled = true;
+  }
+  else
+    return errorMsg("Invalid compile token " + token->listString());
+
+  if (! compiled)
+    compiledTokens = tokens;
+
+  return true;
+}
+
+bool
+CPetBasic::
+runTokens(const LineRef &lineRef, const Tokens &tokens, bool &nextLine)
+{
+  auto nt = tokens.size();
+  assert(nt >= 1);
+
+  uint it = 0;
+
+  auto *token = tokens[it++];
+
+  if (token->type() == TokenType::KEYWORD) {
+    TokenList tokenList(tokens);
+
+    tokenList.skipToken(); // keyword
+
+    auto *keyword = static_cast<KeywordToken *>(token);
+
+    bool rc = false;
+
+    switch (keyword->keywordType()) {
+      case KeywordType::APPEND:
+        rc = appendStatement(tokens);
+        break;
+#ifdef PET_EXTRA_KEYWORDS
+      case KeywordType::ASSERT:
+        rc = assertStatement(tokens);
+        break;
+#endif
+      case KeywordType::BACKUP:
+        rc = backupStatement(tokens);
+        break;
+      case KeywordType::CLOSE:
+        rc = closeStatement(tokens);
+        break;
+      case KeywordType::CLR:
+        rc = clrStatement(tokens);
+        break;
+      case KeywordType::CMD:
+        rc = cmdStatement(tokens);
+        break;
+      case KeywordType::COLLECT:
+        rc = collectStatement(tokens);
+        break;
+      case KeywordType::CONCAT:
+        rc = concatStatement(tokens);
+        break;
+      case KeywordType::CONT:
+        rc = contStatement(tokens);
+        break;
+      case KeywordType::COPY:
+        rc = copyStatement(tokens);
+        break;
+      case KeywordType::DATA:
+        rc = dataStatement(token->str());
+        break;
+      case KeywordType::DCLOSE:
+        rc = dcloseStatement(tokens);
+        break;
+      case KeywordType::DEF:
+        rc = defStatement(tokens);
+        break;
+#ifdef PET_EXTRA_KEYWORDS
+      case KeywordType::DELAY:
+        rc = delayStatement(tokens);
+        break;
+#endif
+      case KeywordType::DIM:
+        rc = dimStatement(tokens);
+        break;
+      case KeywordType::DIRECTORY:
+        rc = directoryStatement(tokens);
+        break;
+      case KeywordType::DLOAD:
+        rc = dloadStatement(tokens);
+        break;
+      case KeywordType::DOPEN:
+        rc = dopenStatement(tokens);
+        break;
+      case KeywordType::DSAVE:
+        rc = dsaveStatement(tokens);
+        break;
+#ifdef PET_EXTRA_KEYWORDS
+      case KeywordType::ELAPSED:
+        rc = elapsedStatement(tokens);
+        break;
+#endif
+      case KeywordType::END:
+        rc = endStatement(tokens);
+        break;
+      case KeywordType::FOR:
+        rc = forStatement(lineRef, tokens);
+        break;
+      case KeywordType::GET:
+        rc = getStatement(tokenList);
+        break;
+      case KeywordType::GOSUB:
+        rc = gosubStatement(tokens);
+        nextLine = false;
+        break;
+      case KeywordType::GOTO:
+        rc = gotoStatement(tokens);
+        nextLine = false;
+        break;
+      case KeywordType::HEADER:
+        rc = headerStatement(tokens);
+        break;
+      case KeywordType::IF:
+        rc = ifStatement(lineRef, tokens, nextLine);
+        break;
+      case KeywordType::INPUT:
+        rc = inputStatement(tokenList);
+        break;
+      case KeywordType::LET:
+        rc = letStatement(tokens);
+        break;
+      case KeywordType::LIST:
+        rc = listStatement(tokenList);
+        break;
+      case KeywordType::LOAD:
+        rc = loadStatement(tokens);
+        break;
+      case KeywordType::NEW:
+        rc = newStatement(tokens);
+        break;
+      case KeywordType::NEXT:
+        rc = nextStatement(lineRef, tokens);
+        nextLine = false;
+        break;
+      case KeywordType::ON:
+        rc = onStatement(tokenList);
+        nextLine = false;
+        break;
+      case KeywordType::OPEN:
+        rc = openStatement(tokens);
+        break;
+#ifdef PET_EXTRA_KEYWORDS
+      case KeywordType::PLOT:
+        rc = plotStatement(tokens);
+        break;
+#endif
+      case KeywordType::POKE:
+        rc = pokeStatement(tokens);
+        break;
+      case KeywordType::PRINT:
+        rc = printStatement(tokens);
+        break;
+      case KeywordType::READ:
+        rc = readStatement(tokens);
+        break;
+      case KeywordType::RECORD:
+        rc = recordStatement(tokens);
+        break;
+      case KeywordType::REM:
+        rc = true;
+        break;
+      case KeywordType::RENAME:
+        rc = renameStatement(tokens);
+        break;
+      case KeywordType::RESTORE:
+        rc = restoreStatement(tokens);
+        break;
+      case KeywordType::RETURN:
+        rc = returnStatement(tokens);
+        nextLine = false;
+        break;
+      case KeywordType::RUN:
+        rc = runStatement(tokens);
+        break;
+      case KeywordType::SAVE:
+        rc = saveStatement(tokens);
+        break;
+      case KeywordType::SCRATCH:
+        rc = scratchStatement(tokens);
+        break;
+      case KeywordType::STOP:
+        rc = stopStatement(tokens);
+        break;
+      case KeywordType::SYS:
+        rc = sysStatement(tokens);
+        break;
+      case KeywordType::VERIFY:
+        rc = verifyStatement(tokens);
+        break;
+      case KeywordType::WAIT:
+        rc = waitStatement(tokens);
+        break;
+      default:
+        warnMsg("Unhandled keyword " + token->listString());
+        break;
+    }
+
+    if (! rc || errorMsg_ != "")
+      return errorMsg(errorMsg_ != "" ? errorMsg_ : "Command failed");
+  }
+  else if (token->type() == TokenType::VARIABLE) {
+    // <var> <inds> <expr>
+    assert(tokens.size() == 3);
+    auto *varToken = static_cast<VariableToken *>(token);
+
+    auto varName = varToken->str();
+
+    //---
+
+    assert(tokens[1]->type() == TokenType::TOKEN_LIST);
+    auto *indTokens = static_cast<TokenListToken *>(tokens[1]);
+
+    Inds inds;
+
+    if (! indTokens->tokens().empty()) {
+      for (const auto *itoken : indTokens->tokens()) {
+        assert(itoken->type() == TokenType::EXPR);
+        const auto *exprIToken = static_cast<const ExprToken *>(itoken);
+
+        CExprValuePtr val;
+        if (! exprIToken->eval(val))
+          return false;
+
+        long i;
+        if (! val->getIntegerValue(i) || i < 0)
+          return errorMsg("Invalid variable index value");
+
+        inds.push_back(uint(i));
+      };
+    }
+
+    //---
+
+    assert(tokens[2]->type() == TokenType::EXPR);
+    auto *exprToken = static_cast<ExprToken *>(tokens[2]);
+
+    CExprValuePtr val;
+    if (! exprToken->eval(val))
+      return false;
+
+    if (! inds.empty()) {
+      if (! setVariableValue(varName, inds, val))
+        return errorMsg("Failed to set variable value for '" + varName + "'");
+    }
+    else {
+      if (! setVariableValue(varName, val))
+        return errorMsg("Failed to set variable value for '" + varName + "'");
     }
   }
   else
@@ -2357,7 +2625,7 @@ addData(const std::string &dataStr) const
 
 bool
 CPetBasic::
-appendStatement(TokenList &)
+appendStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -2365,7 +2633,58 @@ appendStatement(TokenList &)
 
 bool
 CPetBasic::
-backupStatement(TokenList &)
+compileAssertStatement(TokenList &tokenList, Tokens &compiledTokens)
+{
+  Tokens exprTokens;
+
+  auto *token = tokenList.nextToken();
+
+  while (token) {
+    exprTokens.push_back(token);
+
+    token = tokenList.nextToken();
+  }
+
+  ExprData exprData;
+  if (! tokensToExpr(exprTokens, exprData))
+    return false;
+
+  auto *exprToken = createExpr(exprData);
+
+  compiledTokens.push_back(exprToken);
+
+  return true;
+}
+
+#ifdef PET_EXTRA_KEYWORDS
+bool
+CPetBasic::
+assertStatement(const Tokens &tokens)
+{
+  // ASSERT <expr>
+  auto nt = tokens.size();
+  assert(nt == 2);
+
+  assert(tokens[1]->type() == TokenType::EXPR);
+  auto *exprToken = static_cast<ExprToken *>(tokens[1]);
+
+  CExprValuePtr val;
+  if (! exprToken->eval(val))
+    return false;
+
+  long i;
+  if (! val->getIntegerValue(i))
+    return errorMsg("Invalid assert expression");
+
+  std::cerr << "assert: " << i << "\n";
+
+  return true;
+}
+#endif
+
+bool
+CPetBasic::
+backupStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -2373,7 +2692,7 @@ backupStatement(TokenList &)
 
 bool
 CPetBasic::
-closeStatement(TokenList &)
+closeStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -2381,9 +2700,9 @@ closeStatement(TokenList &)
 
 bool
 CPetBasic::
-clrStatement(TokenList &tokenList)
+clrStatement(const Tokens &tokens)
 {
-  if (! tokenList.atEnd())
+  if (tokens.size() != 1)
     return errorMsg("Extra CLR tokens");
 
   variableNames_.clear();
@@ -2399,7 +2718,7 @@ clrStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-cmdStatement(TokenList &)
+cmdStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -2407,7 +2726,7 @@ cmdStatement(TokenList &)
 
 bool
 CPetBasic::
-collectStatement(TokenList &)
+collectStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -2415,7 +2734,7 @@ collectStatement(TokenList &)
 
 bool
 CPetBasic::
-concatStatement(TokenList &)
+concatStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -2423,9 +2742,9 @@ concatStatement(TokenList &)
 
 bool
 CPetBasic::
-contStatement(TokenList &tokenList)
+contStatement(const Tokens &tokens)
 {
-  if (! tokenList.atEnd())
+  if (tokens.size() != 1)
     return errorMsg("Extra CONT tokens");
 
   if (isStopped()) {
@@ -2439,7 +2758,7 @@ contStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-copyStatement(TokenList &)
+copyStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -2455,7 +2774,7 @@ dataStatement(const std::string &)
 
 bool
 CPetBasic::
-dcloseStatement(TokenList &)
+dcloseStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -2463,7 +2782,7 @@ dcloseStatement(TokenList &)
 
 bool
 CPetBasic::
-defStatement(TokenList &tokenList)
+compileDefStatement(TokenList &tokenList, Tokens &compiledTokens)
 {
   auto *token = tokenList.nextToken();
 
@@ -2471,12 +2790,10 @@ defStatement(TokenList &tokenList)
     return errorMsg("Missing FN for DEF");
 
   // get variable name
-  token = tokenList.nextToken();
+  auto *varToken = tokenList.nextToken();
 
-  if (! token || token->type() != TokenType::VARIABLE)
+  if (! varToken || varToken->type() != TokenType::VARIABLE)
     return errorMsg("Invalid variable for DEF");
-
-  auto varName = token->str();
 
   token = tokenList.nextToken();
 
@@ -2485,7 +2802,7 @@ defStatement(TokenList &tokenList)
   // get arguments if specified
   auto lastType = TokenType::NONE;
 
-  std::vector<std::string> args;
+  Tokens argTokens;
 
   if (token && isSeparator(token, SeparatorType::OPEN_RBRACKET)) {
     auto *token1 = tokenList.nextToken();
@@ -2502,9 +2819,7 @@ defStatement(TokenList &tokenList)
         if (lastType == TokenType::VARIABLE)
           return errorMsg("Invalid extra variable in argument list");
 
-        auto argName = token1->str();
-
-        args.push_back(argName);
+        argTokens.push_back(token1);
       }
 
       lastType = token1->type();
@@ -2520,7 +2835,7 @@ defStatement(TokenList &tokenList)
     token = tokenList.nextToken();
   }
 
-  if (args.empty())
+  if (argTokens.empty())
     return errorMsg("No arguments to function");
 
   //---
@@ -2532,24 +2847,61 @@ defStatement(TokenList &tokenList)
   //---
 
   // get function tokens
-  Tokens tokens;
+  Tokens fnTokens;
 
   token = tokenList.nextToken();
 
   while (token) {
-    tokens.push_back(token);
+    fnTokens.push_back(token);
 
     token = tokenList.nextToken();
   }
 
-  defineFunction(varName, args, tokens);
+  //---
+
+  auto *argsTokenList = createTokenList(argTokens);
+  auto *fnTokenList   = createTokenList(fnTokens);
+
+  compiledTokens.push_back(varToken);
+  compiledTokens.push_back(argsTokenList);
+  compiledTokens.push_back(fnTokenList);
 
   return true;
 }
 
 bool
 CPetBasic::
-delayStatement(TokenList &tokenList)
+defStatement(const Tokens &tokens)
+{
+  // DEF <var> <args> <tokens>
+  auto nt = tokens.size();
+  assert(nt == 4);
+
+  auto *varToken  = tokens[1];
+  auto *argsToken = tokens[2];
+  auto *fnToken   = tokens[3];
+
+  assert(varToken ->type() == TokenType::VARIABLE);
+  assert(argsToken->type() == TokenType::TOKEN_LIST);
+  assert(fnToken  ->type() == TokenType::TOKEN_LIST);
+
+  //---
+
+  auto varName = varToken->str();
+
+  std::vector<std::string> args;
+
+  for (auto *argToken : static_cast<TokenListToken *>(argsToken)->tokens())
+    args.push_back(argToken->str());
+
+  defineFunction(varName, args, static_cast<TokenListToken *>(fnToken)->tokens());
+
+  return true;
+}
+
+bool
+CPetBasic::
+compileDelayStatement(TokenList &tokenList, Tokens &compiledTokens)
 {
   Tokens exprTokens;
 
@@ -2561,8 +2913,31 @@ delayStatement(TokenList &tokenList)
     token = tokenList.nextToken();
   }
 
+  ExprData exprData;
+  if (! tokensToExpr(exprTokens, exprData))
+    return false;
+
+  auto *exprToken = createExpr(exprData);
+
+  compiledTokens.push_back(exprToken);
+
+  return true;
+}
+
+#ifdef PET_EXTRA_KEYWORDS
+bool
+CPetBasic::
+delayStatement(const Tokens &tokens)
+{
+  // DELAY <expr>
+  auto nt = tokens.size();
+  assert(nt == 2);
+
+  assert(tokens[1]->type() == TokenType::EXPR);
+  auto *exprToken = static_cast<ExprToken *>(tokens[1]);
+
   CExprValuePtr val;
-  if (! evalExpr(exprTokens, val))
+  if (! exprToken->eval(val))
     return false;
 
   long i;
@@ -2573,27 +2948,25 @@ delayStatement(TokenList &tokenList)
 
   return true;
 }
+#endif
 
 bool
 CPetBasic::
-dimStatement(TokenList &tokenList)
+compileDimStatement(TokenList &tokenList, Tokens &compiledTokens)
 {
   auto *token = tokenList.currentToken();
 
   while (token) {
-    std::string varName;
-    Inds        inds;
-
-    if (! readVariable(tokenList, "DIM", varName, inds))
+    Tokens tokens1;
+    if (! compileVariable(tokenList, "DIM", tokens1))
       return false;
 
-#if 0
-    printVarDetails("DIM", varName, inds);
-#endif
+    if (tokens1.size() != 2)
+      return errorMsg("Missing dimension for var");
 
-    //---
+    auto *varTokenList = createTokenList(tokens1);
 
-    dimVariable(varName, inds);
+    compiledTokens.push_back(varTokenList);
 
     //---
 
@@ -2611,7 +2984,59 @@ dimStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-directoryStatement(TokenList &)
+dimStatement(const Tokens &tokens)
+{
+  // DIM ( <var> <inds> , ...)
+  auto nt = tokens.size();
+  assert(nt >= 1);
+
+  for (uint i = 1; i < nt; ++i) {
+    auto *token = tokens[i];
+
+    assert(token->type() == TokenType::TOKEN_LIST);
+    auto *tokenList = static_cast<TokenListToken *>(token);
+
+    // <var> <dims>
+    const auto &tokens1 = tokenList->tokens();
+
+    auto nt1 = tokens1.size();
+    assert(nt1 == 2);
+
+    auto *varToken = tokens1[0];
+    auto varName = varToken->str();
+
+    auto *indsToken = tokens1[1];
+    assert(indsToken->type() == TokenType::TOKEN_LIST);
+    auto *indsTokenList = static_cast<TokenListToken *>(indsToken);
+
+    Inds inds;
+
+    for (auto *itoken : indsTokenList->tokens()) {
+      assert(itoken->type() == TokenType::EXPR);
+      const auto *exprIToken = static_cast<const ExprToken *>(itoken);
+
+      CExprValuePtr val;
+      if (! exprIToken->eval(val))
+        return false;
+
+      long ival;
+      if (! val->getIntegerValue(ival) || ival < 0)
+        return errorMsg("Invalid variable index value");
+
+      inds.push_back(uint(ival));
+    }
+
+    //---
+
+    dimVariable(varName, inds);
+  }
+
+  return true;
+}
+
+bool
+CPetBasic::
+directoryStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -2619,7 +3044,7 @@ directoryStatement(TokenList &)
 
 bool
 CPetBasic::
-dloadStatement(TokenList &)
+dloadStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -2627,7 +3052,7 @@ dloadStatement(TokenList &)
 
 bool
 CPetBasic::
-dopenStatement(TokenList &)
+dopenStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -2635,16 +3060,42 @@ dopenStatement(TokenList &)
 
 bool
 CPetBasic::
-dsaveStatement(TokenList &)
+dsaveStatement(const Tokens &)
 {
   assert(false);
   return false;
 }
 
+#ifdef PET_EXTRA_KEYWORDS
 bool
 CPetBasic::
-endStatement(TokenList &)
+elapsedStatement(const Tokens &)
 {
+  static CHRTime lastTime;
+  static bool    lastTimeSet { false };
+
+  auto t = COSTime::getHRTime();
+
+  if (lastTimeSet) {
+    auto dt = COSTime::diffHRTime(lastTime, t);
+
+    std::cerr << "Elapsed: " << dt.usecs << "\n";
+  }
+
+  lastTime    = t;
+  lastTimeSet = true;
+
+  return true;
+}
+#endif
+
+bool
+CPetBasic::
+endStatement(const Tokens &tokens)
+{
+  if (tokens.size() != 1)
+    return errorMsg("Extra END tokens");
+
   setStopped(true);
 
   return true;
@@ -2652,7 +3103,7 @@ endStatement(TokenList &)
 
 bool
 CPetBasic::
-forStatement(const LineRef &lineRef, TokenList &tokenList)
+compileForStatement(TokenList &tokenList, Tokens &compiledTokens)
 {
   // get loop variable
   auto *varToken = tokenList.nextToken();
@@ -2737,6 +3188,72 @@ forStatement(const LineRef &lineRef, TokenList &tokenList)
 
   //---
 
+  compiledTokens.push_back(varToken);
+
+  //---
+
+  ExprData fromExprData;
+  if (! tokensToExpr(fromTokens, fromExprData))
+    return false;
+
+  auto *fromExprToken = createExpr(fromExprData);
+
+  compiledTokens.push_back(fromExprToken);
+
+  //---
+
+  ExprData toExprData;
+  if (! tokensToExpr(toTokens, toExprData))
+    return false;
+
+  auto *toExprToken = createExpr(toExprData);
+
+  compiledTokens.push_back(toExprToken);
+
+  //---
+
+  if (stepFound) {
+    ExprData stepExprData;
+    if (! tokensToExpr(stepTokens, stepExprData))
+      return false;
+
+    auto *stepExprToken = createExpr(stepExprData);
+
+    compiledTokens.push_back(stepExprToken);
+  }
+
+  return true;
+}
+
+bool
+CPetBasic::
+forStatement(const LineRef &lineRef, const Tokens &tokens)
+{
+  // FOR <var> <from> <to> [<step>]
+  auto nt = tokens.size();
+  assert(nt == 4 || nt <= 5);
+
+  // get loop variable
+  auto *varToken = tokens[1];
+
+  //---
+
+  // get from to and step tokens
+  assert(tokens[2]->type() == TokenType::EXPR);
+  auto *fromExpr = static_cast<ExprToken *>(tokens[2]);
+
+  assert(tokens[3]->type() == TokenType::EXPR);
+  auto *toExpr = static_cast<ExprToken *>(tokens[3]);
+
+  ExprToken *stepExpr = nullptr;
+
+  if (nt == 5) {
+    assert(tokens[4]->type() == TokenType::EXPR);
+    stepExpr = static_cast<ExprToken *>(tokens[4]);
+  }
+
+  //---
+
   // get/create loop variable
   auto var = getVariable(varToken->str());
 
@@ -2744,16 +3261,18 @@ forStatement(const LineRef &lineRef, TokenList &tokenList)
 
   // calc from, to and (optional) step values
   CExprValuePtr fromVal;
-  if (! evalExpr(fromTokens, fromVal))
+  if (! fromExpr->eval(fromVal))
     return false;
 
   CExprValuePtr toVal;
-  if (! evalExpr(toTokens, toVal))
+  if (! toExpr->eval(toVal))
     return false;
 
   CExprValuePtr stepVal;
-  if (stepFound && ! evalExpr(stepTokens, stepVal))
-    return false;
+  if (stepExpr) {
+    if (! stepExpr->eval(stepVal))
+      return false;
+  }
 
   //---
 
@@ -2762,7 +3281,7 @@ forStatement(const LineRef &lineRef, TokenList &tokenList)
   if (! toVal->getIntegerValue(toI))
     return errorMsg("No FOR ... TO value");
 
-  if (stepFound) {
+  if (stepExpr) {
     long stepI;
     if (! stepVal->getIntegerValue(stepI))
       return errorMsg("Invalid FOR ... TO ... STEP value");
@@ -2771,7 +3290,8 @@ forStatement(const LineRef &lineRef, TokenList &tokenList)
   //---
 
   // set loop variable to from value
-  var->setValue(fromVal);
+  auto fromVal1 = CExprValuePtr(fromVal->dup());
+  var->setValue(fromVal1);
 
   //---
 
@@ -2840,7 +3360,7 @@ getStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-gosubStatement(TokenList &tokenList)
+compileGosubStatement(TokenList &tokenList, Tokens &compiledTokens)
 {
   auto *token = tokenList.nextToken();
   if (! token) return errorMsg("Missing value");
@@ -2848,10 +3368,28 @@ gosubStatement(TokenList &tokenList)
   if (token->type() != TokenType::NUMBER)
     return errorMsg("Not a number");
 
-  uint lineNum = uint(token->toInteger());
+  auto *numberToken = static_cast<NumberToken *>(token);
+
+  compiledTokens.push_back(numberToken);
+
+  return true;
+}
+
+bool
+CPetBasic::
+gosubStatement(const Tokens &tokens)
+{
+  // GOSUB <lineNum>
+  auto nt = tokens.size();
+  assert(nt == 2);
+
+  auto *token = tokens[1];
+  assert(token->type() == TokenType::NUMBER);
+
+  auto lineNum = uint(token->toInteger());
   //std::cout << "GOSUB " << lineNum << "\n";
 
-  auto lineInd = getLineInd(lineNum);
+  auto lineInd = getLineInd(int(lineNum));
   if (lineInd < 0) return errorMsg("Invalid GOSUB line");
 
   pushLine(LineRef(lineNum));
@@ -2861,13 +3399,31 @@ gosubStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-gotoStatement(TokenList &tokenList)
+compileGotoStatement(TokenList &tokenList, Tokens &compiledTokens)
 {
   auto *token = tokenList.nextToken();
   if (! token) return errorMsg("Missing value");
 
   if (token->type() != TokenType::NUMBER)
     return errorMsg("Not a number");
+
+  auto *numberToken = static_cast<NumberToken *>(token);
+
+  compiledTokens.push_back(numberToken);
+
+  return true;
+}
+
+bool
+CPetBasic::
+gotoStatement(const Tokens &tokens)
+{
+  // GOTO <line>
+  auto nt = tokens.size();
+  assert(nt == 2);
+
+  auto *token = tokens[1];
+  assert(token->type() == TokenType::NUMBER);
 
   auto lineNum = uint(token->toInteger());
   //std::cout << "GOTO " << lineNum << "\n";
@@ -2882,7 +3438,7 @@ gotoStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-headerStatement(TokenList &)
+headerStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -2890,17 +3446,23 @@ headerStatement(TokenList &)
 
 bool
 CPetBasic::
-ifStatement(const LineRef &lineRef, TokenList &tokenList, bool &nextLine)
+compileIfStatement(TokenList &tokenList, Tokens &compiledTokens)
 {
+  // get if expression tokens (up to THEN or GOTO)
   Tokens exprTokens;
 
-  bool thenFound = false;
+  KeywordToken *thenToken = nullptr;
+  KeywordToken *gotoToken = nullptr;
 
   auto *token = tokenList.nextToken();
 
   while (token) {
-    if (isKeyword(token, KeywordType::THEN)) {
-      thenFound = true;
+    if      (isKeyword(token, KeywordType::THEN)) {
+      thenToken = static_cast<KeywordToken *>(token);
+      break;
+    }
+    else if (isKeyword(token, KeywordType::GOTO)) {
+      gotoToken = static_cast<KeywordToken *>(token);
       break;
     }
 
@@ -2909,28 +3471,29 @@ ifStatement(const LineRef &lineRef, TokenList &tokenList, bool &nextLine)
     token = tokenList.nextToken();
   }
 
-  if (! thenFound)
-    return errorMsg("No THEN for IF");
-
   //---
 
-  CExprValuePtr val;
-  if (! evalExpr(exprTokens, val))
+  // compile if exprssion
+  ExprData exprData;
+  if (! tokensToExpr(exprTokens, exprData))
     return false;
 
-  long i;
-  if (! val->getIntegerValue(i))
-    return errorMsg("Invalid IF expression");
+  auto *exprToken = createExpr(exprData);
 
-  if (! i) {
-    nextLine = false;
-    setLineInd(lineInd_ + 1, 0);
-
-    return true;
-  }
+  compiledTokens.push_back(exprToken);
 
   //---
 
+  if      (thenToken)
+    compiledTokens.push_back(thenToken);
+  else if (gotoToken)
+    compiledTokens.push_back(gotoToken);
+  else
+    return errorMsg("No THEN or GOTO for IF");
+
+  //---
+
+  // get tokens after then/goto
   Tokens tokens;
 
   token = tokenList.nextToken();
@@ -2941,11 +3504,101 @@ ifStatement(const LineRef &lineRef, TokenList &tokenList, bool &nextLine)
     token = tokenList.nextToken();
   }
 
-  if (tokens.size() == 1) {
+  //---
+
+  if (thenToken) {
+    // if single number after token then use as goto line number
+    if (tokens.size() == 1) {
+      auto *token1 = tokens[0];
+
+      if (token1->type() == TokenType::NUMBER) {
+        auto *numberToken = static_cast<NumberToken *>(token1);
+
+        compiledTokens.push_back(numberToken);
+
+        return true;
+      }
+    }
+
+    //---
+
+    // compile tokens after if
+    Tokens compiledTokens1;
+    bool   hasCompiled1;
+
+    if (! compileTokens(tokens, hasCompiled1, compiledTokens1))
+      return false;
+
+    for (auto *ctoken : compiledTokens1)
+      compiledTokens.push_back(ctoken);
+  }
+  else {
+    // must be single number after goto
+    if (tokens.size() != 1)
+      return errorMsg("Invalid IF <expr> GOTO line");
+
     auto *token1 = tokens[0];
 
-    if (token1->type() == TokenType::NUMBER) {
-      uint lineNum = uint(token1->toInteger());
+    if (token1->type() != TokenType::NUMBER)
+      return errorMsg("Invalid IF <expr> GOTO line");
+
+    auto *numberToken = static_cast<NumberToken *>(token1);
+
+    compiledTokens.push_back(numberToken);
+  }
+
+  return true;
+}
+
+bool
+CPetBasic::
+ifStatement(const LineRef &lineRef, const Tokens &tokens, bool &nextLine)
+{
+  // IF <expr> THEN|GOTO <line>|<tokens>
+  auto nt = tokens.size();
+  assert(nt > 2);
+
+  // get if expression
+  assert(tokens[1]->type() == TokenType::EXPR);
+  auto *expr = static_cast<ExprToken *>(tokens[1]);
+
+  bool thenFound = false;
+  bool gotoFound = false;
+
+  if      (isKeyword(tokens[2], KeywordType::THEN))
+    thenFound = true;
+  else if (isKeyword(tokens[2], KeywordType::GOTO))
+    gotoFound = true;
+
+   assert(thenFound || gotoFound);
+
+  //---
+
+  // evaluate if expression
+  CExprValuePtr val;
+  if (! expr->eval(val))
+    return false;
+
+  long ival;
+  if (! val->getIntegerValue(ival))
+    return errorMsg("Invalid IF expression");
+
+  //---
+
+  // if expression false then goto next line
+  if (! ival) {
+    nextLine = false;
+    setLineInd(lineInd_ + 1, 0);
+
+    return true;
+  }
+
+  //---
+
+  if (thenFound) {
+    // if single number after token then use as goto line number
+    if (nt == 4 && tokens[3]->type() == TokenType::NUMBER) {
+      uint lineNum = uint(tokens[3]->toInteger());
 
       auto lineInd = getLineInd(lineNum);
       if (lineInd < 0) return errorMsg("Invalid IF THEN line");
@@ -2955,11 +3608,31 @@ ifStatement(const LineRef &lineRef, TokenList &tokenList, bool &nextLine)
 
       return true;
     }
-  }
 
-  // TODO: statementNum ?
-  if (! runTokens(lineRef.lineNum, tokens, nextLine))
-    return false;
+    //---
+
+    // run tokens after if (and remaining statements on line)
+    Tokens compiledTokens;
+
+    for (uint i = 3; i < nt; ++i)
+      compiledTokens.push_back(tokens[i]);
+
+    if (! runTokens(lineRef, compiledTokens, nextLine))
+      return false;
+  }
+  else {
+    // must be single number after goto
+    assert(nt == 4 && tokens[3]->type() == TokenType::NUMBER);
+
+    auto lineNum = uint(tokens[3]->toInteger());
+    //std::cout << "GOTO " << lineNum << "\n";
+
+    auto lineInd = getLineInd(lineNum);
+    if (lineInd < 0) return errorMsg("Invalid IF <expr> GOTO line");
+
+    setLineInd(lineInd, 0);
+    nextLine = false;
+  }
 
   return true;
 }
@@ -3005,22 +3678,20 @@ inputStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-letStatement(TokenList &tokenList)
+compileLetStatement(TokenList &tokenList, Tokens &compiledTokens)
 {
-  // get varaible name
-  auto *token = tokenList.nextToken();
+  // get variable name
+  auto *varToken = tokenList.nextToken();
 
-  if (! token || token->type() != TokenType::VARIABLE)
+  if (! varToken || varToken->type() != TokenType::VARIABLE)
     return errorMsg("Invalid variable for LET");
-
-  auto varName = token->str();
-
-  token = tokenList.nextToken();
 
   //---
 
-  // get indices if specified
-  Inds inds;
+  // get optional index tokens
+  Tokens indExprs;
+
+  auto *token = tokenList.nextToken();
 
   if (token && isSeparator(token, SeparatorType::OPEN_RBRACKET)) {
     auto *token1 = tokenList.nextToken();
@@ -3031,22 +3702,21 @@ letStatement(TokenList &tokenList)
       if (indexTokens.empty())
         return errorMsg("No indices for array variable");
 
-      CExprValuePtr val;
-      if (! evalExpr(indexTokens, val))
+      ExprData exprData;
+      if (! tokensToExpr(indexTokens, exprData))
         return false;
 
-      long i;
-      if (! val->getIntegerValue(i) || i < 0)
-        return errorMsg("Invalid variable index value");
+      auto *exprToken = createExpr(exprData);
 
-      inds.push_back(uint(i));
+      indExprs.push_back(exprToken);
 
       return true;
     };
 
     while (token1 && ! isSeparator(token1, SeparatorType::CLOSE_RBRACKET)) {
       if (isSeparator(token1, SeparatorType::COMMA)) {
-        if (! addInd()) return false;
+        if (! addInd())
+          return false;
 
         indexTokens.clear();
       }
@@ -3068,6 +3738,8 @@ letStatement(TokenList &tokenList)
     token = tokenList.nextToken();
   }
 
+  auto *indexToken = createTokenList(indExprs);
+
   //---
 
   // ensure we have assign operator
@@ -3076,19 +3748,79 @@ letStatement(TokenList &tokenList)
 
   //---
 
-  // calc value to assign
-  Tokens tokens;
+  // get assign tokens
+  Tokens assignTokens;
 
   token = tokenList.nextToken();
 
   while (token) {
-    tokens.push_back(token);
+    assignTokens.push_back(token);
 
     token = tokenList.nextToken();
   }
 
+  ExprData exprData;
+  if (! tokensToExpr(assignTokens, exprData))
+    return false;
+
+  auto *exprToken = createExpr(exprData);
+
+  //---
+
+  compiledTokens.push_back(varToken);
+  compiledTokens.push_back(indexToken);
+  compiledTokens.push_back(exprToken);
+
+  return true;
+}
+
+bool
+CPetBasic::
+letStatement(const Tokens &tokens)
+{
+  // LET <var> <inds> <expr>
+  auto nt = tokens.size();
+  assert(nt == 4);
+
+  // get variable name
+  auto *varToken = tokens[1];
+  assert(varToken->type() == TokenType::VARIABLE);
+
+  auto varName = varToken->str();
+
+  //---
+
+  // get indices if specified
+  assert(tokens[2]->type() == TokenType::TOKEN_LIST);
+  auto *indTokens = static_cast<TokenListToken *>(tokens[2]);
+
+  Inds inds;
+
+  if (! indTokens->tokens().empty()) {
+    for (const auto *itoken : indTokens->tokens()) {
+      assert(itoken->type() == TokenType::EXPR);
+      const auto *exprIToken = static_cast<const ExprToken *>(itoken);
+
+      CExprValuePtr val;
+      if (! exprIToken->eval(val))
+        return false;
+
+      long i;
+      if (! val->getIntegerValue(i) || i < 0)
+        return errorMsg("Invalid variable index value");
+
+      inds.push_back(uint(i));
+    };
+  }
+
+  //---
+
+  // calc value to assign
+  assert(tokens[3]->type() == TokenType::EXPR);
+  auto *exprToken = static_cast<ExprToken *>(tokens[3]);
+
   CExprValuePtr val;
-  if (! evalExpr(tokens, val))
+  if (! exprToken->eval(val))
     return false;
 
   //---
@@ -3096,11 +3828,11 @@ letStatement(TokenList &tokenList)
   // set variable
   if (! inds.empty()) {
     if (! setVariableValue(varName, inds, val))
-      return false;
+      return errorMsg("Failed to set variable value for '" + varName + "'");
   }
   else {
     if (! setVariableValue(varName, val))
-      return false;
+      return errorMsg("Failed to set variable value for '" + varName + "'");
   }
 
   return true;
@@ -3108,17 +3840,78 @@ letStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-listStatement(TokenList &)
+listStatement(TokenList &tokenList)
 {
+  auto *token = tokenList.nextToken();
+
+  long startNum    = -1;
+  bool startNumSet = false;
+  long endNum      = -1;
+  bool endNumSet   = false;
+  bool endRange    = false;
+
+  if (token && token->type() != TokenType::NUMBER)
+    return errorMsg("Invalid line number for LIST");
+
+  if (token) {
+    auto *numberToken = static_cast<NumberToken *>(token);
+
+    startNum    = numberToken->toInteger();
+    startNumSet = true;
+
+    if (startNum < 0) {
+      startNumSet = false;
+
+      endNum    = -startNum;
+      endNumSet = true;
+    }
+
+    token = tokenList.nextToken();
+
+    if (! endNumSet) {
+      if (token) {
+        if (token->type() == TokenType::OPERATOR && token->str() == "-") {
+          endRange = true;
+          token    = nullptr;
+        }
+      }
+
+      if (token && token->type() != TokenType::NUMBER)
+        return errorMsg("Invalid line number for LIST");
+
+      if (token) {
+        auto *numberToken1 = static_cast<NumberToken *>(token);
+
+        endNum    = numberToken1->toInteger();
+        endNumSet = true;
+
+        if (endNum < 0)
+          endNum = -endNum;
+
+        token = tokenList.nextToken();
+      }
+    }
+
+    if (token)
+      return errorMsg("Too many tokens for LIST");
+  }
+
   // TODO: list from line
-  list();
+  if      (startNumSet && endNumSet)
+    list(startNum, endNum);
+  else if (startNumSet)
+    list(startNum, (endRange ? -1 : startNum));
+  else if (endNumSet)
+    list(-1, endNum);
+  else
+    list(-1, -1);
 
   return true;
 }
 
 bool
 CPetBasic::
-loadStatement(TokenList &)
+loadStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -3126,14 +3919,14 @@ loadStatement(TokenList &)
 
 bool
 CPetBasic::
-newStatement(TokenList &tokenList)
+newStatement(const Tokens &tokens)
 {
-  if (! tokenList.atEnd())
+  if (tokens.size() != 1)
     return errorMsg("Extra NEW tokens");
 
   initRunState();
 
-  lines_.clear();
+  clearLines();
 
   setLineInd(-1, 0);
 
@@ -3151,9 +3944,36 @@ newStatement(TokenList &tokenList)
   return true;
 }
 
+void
+CPetBasic::
+clearLines()
+{
+  for (auto &pl : lines_) {
+    auto &lineData = pl.second;
+
+    for (auto *token : lineData.tokens)
+      delete token;
+
+    for (auto &statement : lineData.statements) {
+      if (! statement.hasCompiled) continue;
+
+      for (auto *ctoken : statement.compiledTokens) {
+        if (ctoken->type() == TokenType::KEYWORD ||
+            ctoken->type() == TokenType::VARIABLE ||
+            ctoken->type() == TokenType::NUMBER)
+          continue;
+
+        delete ctoken;
+      }
+    }
+  }
+
+  lines_.clear();
+}
+
 bool
 CPetBasic::
-nextStatement(const LineRef &lineRef, TokenList &tokenList)
+compileNextStatement(TokenList &tokenList, Tokens &compiledTokens)
 {
   // get var name
   std::string varName = "";
@@ -3162,6 +3982,24 @@ nextStatement(const LineRef &lineRef, TokenList &tokenList)
 
   if (varToken && varToken->type() != TokenType::VARIABLE)
     return errorMsg("Invalid NEXT variable ");
+
+  if (varToken)
+    compiledTokens.push_back(varToken);
+
+  return true;
+}
+
+bool
+CPetBasic::
+nextStatement(const LineRef &lineRef, const Tokens &tokens)
+{
+  auto nt = tokens.size();
+  assert(nt == 1 || nt == 2);
+
+  // get var name
+  auto *varToken = (nt > 1 ? tokens[1] : nullptr);
+
+  std::string varName;
 
   if (varToken)
     varName = CPetBasicUtil::toUpper(varToken->str());
@@ -3313,15 +4151,110 @@ onStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-openStatement(TokenList &)
+openStatement(const Tokens &)
 {
   assert(false);
   return false;
 }
 
+#ifdef PET_EXTRA_KEYWORDS
 bool
 CPetBasic::
-pokeStatement(TokenList &tokenList)
+compilePlotStatement(TokenList &tokenList, Tokens &compiledTokens)
+{
+  using TokensArray = std::vector<Tokens>;
+
+  TokensArray tokensArray;
+
+  while (true) {
+    Tokens tokens;
+
+    auto *token = tokenList.nextToken();
+
+    // get first expression
+    int brackets = 0;
+
+    while (token) {
+      if (brackets <= 0) {
+        if (isSeparator(token, SeparatorType::COMMA))
+          break;
+      }
+
+      if      (isSeparator(token, SeparatorType::OPEN_RBRACKET)) {
+        ++brackets;
+      }
+      else if (isSeparator(token, SeparatorType::CLOSE_RBRACKET)) {
+        --brackets;
+      }
+
+      tokens.push_back(token);
+
+      token = tokenList.nextToken();
+    }
+
+    tokensArray.push_back(tokens);
+
+    if (! token)
+      break;
+  }
+
+  if (tokensArray.size() != 3)
+    return errorMsg("Invalid number of values for PLOT");
+
+  for (const auto &tokens : tokensArray) {
+    ExprData exprData;
+    if (! tokensToExpr(tokens, exprData))
+      return false;
+
+    auto *exprToken = createExpr(exprData);
+
+    compiledTokens.push_back(exprToken);
+  }
+
+  return true;
+}
+#endif
+
+#ifdef PET_EXTRA_KEYWORDS
+bool
+CPetBasic::
+plotStatement(const Tokens &tokens)
+{
+  // PLOT <x> <y> <color>
+  auto nt = tokens.size();
+  assert(nt == 4);
+
+  using IValues = std::vector<long>;
+
+  IValues ivalues;
+
+  for (int i = 1; i < 4; ++i) {
+    auto *token = tokens[i];
+
+    assert(token->type() == TokenType::EXPR);
+    const auto *exprToken = static_cast<const ExprToken *>(token);
+
+    CExprValuePtr value;
+    if (! exprToken->eval(value))
+      return false;
+
+    long ivalue;
+
+    if (! value->getIntegerValue(ivalue))
+      return errorMsg("Invalid PLOT argument");
+
+    ivalues.push_back(ivalue);
+  }
+
+  term_->drawPoint(ivalues[0], ivalues[1], ivalues[2]);
+
+  return true;
+}
+#endif
+
+bool
+CPetBasic::
+compilePokeStatement(TokenList &tokenList, Tokens &compiledTokens)
 {
   Tokens tokens1;
 
@@ -3366,12 +4299,47 @@ pokeStatement(TokenList &tokenList)
 
   //---
 
-  CExprValuePtr addrValue;
-  if (! evalExpr(tokens1, addrValue))
+  ExprData addrExprData;
+  if (! tokensToExpr(tokens1, addrExprData))
     return false;
 
+  auto *addrExprToken = createExpr(addrExprData);
+
+  compiledTokens.push_back(addrExprToken);
+
+  ExprData valueExprData;
+  if (! tokensToExpr(tokens2, valueExprData))
+    return false;
+
+  auto *valueExprToken = createExpr(valueExprData);
+
+  compiledTokens.push_back(valueExprToken);
+
+  return true;
+}
+
+bool
+CPetBasic::
+pokeStatement(const Tokens &tokens)
+{
+  // POKE <addr> <value>
+  auto nt = tokens.size();
+  assert(nt == 3);
+
+  //---
+
+  assert(tokens[1]->type() == TokenType::EXPR);
+  const auto *addrToken = static_cast<const ExprToken *>(tokens[1]);
+
+  CExprValuePtr addrValue;
+  if (! addrToken->eval(addrValue))
+    return false;
+
+  assert(tokens[2]->type() == TokenType::EXPR);
+  const auto *valueToken = static_cast<const ExprToken *>(tokens[2]);
+
   CExprValuePtr valueValue;
-  if (! evalExpr(tokens2, valueValue))
+  if (! valueToken->eval(valueValue))
     return false;
 
   long addr, value;
@@ -3390,39 +4358,33 @@ pokeStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-printStatement(TokenList &tokenList)
+compilePrintStatement(TokenList &tokenList, Tokens &compiledTokens)
 {
-  // , next tab stop (10), ; next pos
-  enum class Spacer {
-    NONE,
-    COMMA,
-    SEMI_COLON
-  };
-
-  Spacer nextSpacer { Spacer::NONE };
+  // , next tab stop (10)
+  // ; next pos
 
   while (true) {
-    auto spacer = nextSpacer;
-
     Tokens tokens1;
 
     auto *token = tokenList.nextToken();
     if (! token) break;
 
-    auto lastType = TokenType::NONE;
-
     int brackets = 0;
+
+    SeparatorToken *sep = nullptr;
+
+    auto lastType = TokenType::NONE;
 
     while (token) {
       auto type = token->type();
 
       if (brackets <= 0) {
         if      (isSeparator(token, SeparatorType::COMMA)) {
-          nextSpacer = Spacer::COMMA;
+          sep = static_cast<SeparatorToken *>(token);
           break;
         }
         else if (isSeparator(token, SeparatorType::SEMI_COLON)) {
-          nextSpacer = Spacer::SEMI_COLON;
+          sep = static_cast<SeparatorToken *>(token);
           break;
         }
 
@@ -3438,7 +4400,6 @@ printStatement(TokenList &tokenList)
 
         if (endExpression) {
           tokenList.prevToken();
-          nextSpacer = Spacer::SEMI_COLON;
           break;
         }
       }
@@ -3459,17 +4420,46 @@ printStatement(TokenList &tokenList)
 
     //---
 
-    CExprValuePtr value;
-    if (! evalExpr(tokens1, value))
+    ExprData exprData;
+    if (! tokensToExpr(tokens1, exprData))
       return false;
 
-    //---
+    auto *exprToken = createExpr(exprData);
 
-    if (spacer == Spacer::COMMA) {
-      printString("\t");
-    }
-    else {
-      if (term_->col() == 9) {
+    compiledTokens.push_back(exprToken);
+
+    if (sep != nullptr)
+      compiledTokens.push_back(sep);
+  }
+
+  return true;
+}
+
+bool
+CPetBasic::
+printStatement(const Tokens &tokens)
+{
+  // PRINT <expr> [;,] ...
+
+  auto nt = tokens.size();
+
+  // , next tab stop (10)
+  // ; next pos
+
+  if (tokens.empty())
+    return true;
+
+  for (uint i = 1; i < nt; ++i) {
+    auto *token = tokens[i];
+
+    if      (token->type() == TokenType::EXPR) {
+      const auto *expr = static_cast<const ExprToken *>(token);
+
+      CExprValuePtr value;
+      if (! expr->eval(value))
+        return false;
+
+      if (term_->col() == 0) {
         if (value->isIntegerValue() || value->isRealValue()) {
           double r;
 
@@ -3477,35 +4467,112 @@ printStatement(TokenList &tokenList)
             printString(" ");
         }
       }
+
+      std::string s;
+      (void) value->getStringValue(s);
+
+      printString(s);
     }
-
-    std::string s;
-    (void) value->getStringValue(s);
-
-    printString(s);
+    else if (token->type() == TokenType::SEPARATOR) {
+      if      (isSeparator(token, SeparatorType::COMMA)) {
+        printString("\t");
+      }
+      else if (isSeparator(token, SeparatorType::SEMI_COLON)) {
+      }
+      else
+        assert(false);
+    }
+    else {
+      assert(false);
+    }
   }
 
-  printString("\n");
+  auto *lastToken = tokens.back();
+
+  if (lastToken && isSeparator(lastToken, SeparatorType::SEMI_COLON)) {
+    if (term_->col() >= int(term_->numCols()))
+      term_->enter();
+  }
+  else
+    term_->enter();
 
   return true;
 }
 
 bool
 CPetBasic::
-readStatement(TokenList &tokenList)
+compileReadStatement(TokenList &tokenList, Tokens &compiledTokens)
 {
   auto *token = tokenList.currentToken();
 
   while (token) {
-    std::string varName;
-    Inds        inds;
-
-    if (! readVariable(tokenList, "READ", varName, inds))
+    Tokens tokens1;
+    if (! compileVariable(tokenList, "READ", tokens1))
       return false;
 
-#if 0
-    printVarDetails("DIM", varName, inds);
-#endif
+    auto *varTokenList = createTokenList(tokens1);
+
+    compiledTokens.push_back(varTokenList);
+
+    //---
+
+    token = tokenList.currentToken();
+
+    if (token && ! isSeparator(token, SeparatorType::COMMA))
+      return errorMsg("Missing command for READ");
+
+    if (token)
+      token = tokenList.nextToken();
+  }
+
+  return true;
+}
+
+bool
+CPetBasic::
+readStatement(const Tokens &tokens)
+{
+  // READ ( <var> <inds> , ...)
+  auto nt = tokens.size();
+  assert(nt >= 1);
+
+  for (uint i = 1; i < nt; ++i) {
+    auto *token = tokens[i];
+
+    assert(token->type() == TokenType::TOKEN_LIST);
+    auto *tokenList = static_cast<TokenListToken *>(token);
+
+    // <var> <dims>
+    const auto &tokens1 = tokenList->tokens();
+
+    auto nt1 = tokens1.size();
+    assert(nt1 == 1 || nt1 == 2);
+
+    auto *varToken = tokens1[0];
+    auto varName = varToken->str();
+
+    Inds inds;
+
+    if (nt1 == 2) {
+      auto *indsToken = tokens1[1];
+      assert(indsToken->type() == TokenType::TOKEN_LIST);
+      auto *indsTokenList = static_cast<TokenListToken *>(indsToken);
+
+      for (auto *itoken : indsTokenList->tokens()) {
+        assert(itoken->type() == TokenType::EXPR);
+        const auto *exprIToken = static_cast<const ExprToken *>(itoken);
+
+        CExprValuePtr val;
+        if (! exprIToken->eval(val))
+          return false;
+
+        long ival;
+        if (! val->getIntegerValue(ival) || ival < 0)
+          return errorMsg("Invalid variable index value");
+
+        inds.push_back(uint(ival));
+      }
+    }
 
     //---
 
@@ -3523,16 +4590,6 @@ readStatement(TokenList &tokenList)
       if (! setVariableValue(varName, val))
         return errorMsg("Failed to set variable '" + varName + "'");
     }
-
-    //---
-
-    token = tokenList.currentToken();
-
-    if (token && ! isSeparator(token, SeparatorType::COMMA))
-      return errorMsg("Missing READ comma");
-
-    if (token)
-      token = tokenList.nextToken();
   }
 
   return true;
@@ -3540,7 +4597,7 @@ readStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-recordStatement(TokenList &)
+recordStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -3548,7 +4605,7 @@ recordStatement(TokenList &)
 
 bool
 CPetBasic::
-renameStatement(TokenList &)
+renameStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -3556,10 +4613,10 @@ renameStatement(TokenList &)
 
 bool
 CPetBasic::
-restoreStatement(TokenList &tokenList)
+restoreStatement(const Tokens &tokens)
 {
-  if (! tokenList.atEnd())
-    return errorMsg("RESTORE: Extra arguments ");
+  if (tokens.size() != 1)
+    return errorMsg("Extra RESTORE tokens");
 
   dataValuePos_ = 0;
 
@@ -3568,10 +4625,10 @@ restoreStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-returnStatement(TokenList &tokenList)
+returnStatement(const Tokens &tokens)
 {
-  if (! tokenList.atEnd())
-    return errorMsg("RETURN: Extra arguments ");
+  if (tokens.size() != 1)
+    return errorMsg("Extra RETURN tokens");
 
   if (! popLine())
     return errorMsg("RETURN: Empty line stack");
@@ -3581,10 +4638,10 @@ returnStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-runStatement(TokenList &tokenList)
+runStatement(const Tokens &tokens)
 {
-  if (! tokenList.atEnd())
-    return errorMsg("RUN: Extra arguments ");
+  if (tokens.size() != 1)
+    return errorMsg("Extra RUN tokens");
 
   run();
 
@@ -3593,7 +4650,7 @@ runStatement(TokenList &tokenList)
 
 bool
 CPetBasic::
-saveStatement(TokenList &)
+saveStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -3601,7 +4658,7 @@ saveStatement(TokenList &)
 
 bool
 CPetBasic::
-scratchStatement(TokenList &)
+scratchStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -3609,8 +4666,11 @@ scratchStatement(TokenList &)
 
 bool
 CPetBasic::
-stopStatement(TokenList &)
+stopStatement(const Tokens &tokens)
 {
+  if (tokens.size() != 1)
+    return errorMsg("Extra STOP tokens");
+
   setStopped(true);
 
   return true;
@@ -3618,7 +4678,7 @@ stopStatement(TokenList &)
 
 bool
 CPetBasic::
-sysStatement(TokenList &)
+sysStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -3626,7 +4686,7 @@ sysStatement(TokenList &)
 
 bool
 CPetBasic::
-verifyStatement(TokenList &)
+verifyStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -3634,7 +4694,7 @@ verifyStatement(TokenList &)
 
 bool
 CPetBasic::
-waitStatement(TokenList &)
+waitStatement(const Tokens &)
 {
   assert(false);
   return false;
@@ -3642,6 +4702,85 @@ waitStatement(TokenList &)
 
 //---
 
+// read variable name and optional indices from token list
+// expect current token to be variable. Moves to token after close bracket
+bool
+CPetBasic::
+compileVariable(TokenList &tokenList, const std::string &id, Tokens &tokens) const
+{
+  auto *token = tokenList.currentToken();
+
+  if (token->type() != TokenType::VARIABLE)
+    return errorMsg("Missing Variable token for " + id + " '" + token->str() + "'");
+
+  auto *varToken = tokenList.nextToken();
+
+  tokens.push_back(varToken);
+
+  //---
+
+  // just variable
+  token = tokenList.currentToken();
+
+  if (! token || ! isSeparator(token, SeparatorType::OPEN_RBRACKET))
+    return true;
+
+  token = tokenList.nextToken();
+
+  //---
+
+  // parse indices
+  Tokens indexTokens;
+  Tokens indExprs;
+
+  auto addInd = [&]() {
+    if (indexTokens.empty())
+      return errorMsg("Invalid variable index for " + id);
+
+    ExprData exprData;
+    if (! tokensToExpr(indexTokens, exprData))
+      return false;
+
+    auto *exprToken = createExpr(exprData);
+
+    indExprs.push_back(exprToken);
+
+    return true;
+  };
+
+  token = tokenList.currentToken();
+
+  while (token && ! isSeparator(token, SeparatorType::CLOSE_RBRACKET)) {
+    if (isSeparator(token, SeparatorType::COMMA)) {
+      if (! addInd())
+        return false;
+
+      indexTokens.clear();
+    }
+    else {
+      indexTokens.push_back(token);
+    }
+
+    token = tokenList.nextToken();
+    token = tokenList.currentToken();
+  }
+
+  if (! isSeparator(token, SeparatorType::CLOSE_RBRACKET))
+    return errorMsg("Invalid variable index for " + id);
+
+  token = tokenList.nextToken();
+
+  if (! addInd())
+    return false;
+
+  auto *indexToken = createTokenList(indExprs);
+
+  tokens.push_back(indexToken);
+
+  return true;
+}
+
+#if 0
 // read variable name and optional indices from token list
 // expect current token to be variable. Moves to token after close bracket
 bool
@@ -3716,7 +4855,7 @@ readVariable(TokenList &tokenList, const std::string &id,
 
   return true;
 }
-
+#endif
 
 #if 0
 void
@@ -3932,9 +5071,11 @@ printString(const std::string &str) const
 
         drawChar.setReverse(isReverse());
 
-        term_->drawChar(drawChar);
+        if (term_->col() >= int(term_->numCols()) - 1)
+          term_->enter();
 
-        term_->cursorRight(/*nl*/false);
+        if (term_->drawChar(drawChar))
+          term_->cursorRight();
 
         handled = true;
       }
@@ -3946,7 +5087,7 @@ printString(const std::string &str) const
           c = char(toupper(c));
 
         if (term_->drawChar(c))
-          term_->cursorRight(/*nl*/false);
+          term_->cursorRight();
       }
     }
 
@@ -3985,44 +5126,65 @@ bool
 CPetBasic::
 evalExpr(const Tokens &tokens, CExprValuePtr &value) const
 {
-  std::string str;
-  bool        embedded = false;
+  ExprData exprData;
+
+  if (! tokensToExpr(tokens, exprData))
+    return false;
+
+  if (! evalExprData(exprData, value))
+    return false;
+
+  return true;
+}
+
+bool
+CPetBasic::
+tokensToExpr(const Tokens &tokens, ExprData &exprData) const
+{
+  bool embedded = false;
 
   auto nt = tokens.size();
 
+  bool simple = (nt == 1);
+
+  std::string varName;
+
   for (uint i = 0; i < nt; ++i) {
-    if (str != "")
-      str += " ";
+    if (exprData.str != "")
+      exprData.str += " ";
 
     auto *token = tokens[i];
 
     if      (token->type() == TokenType::STRING) {
       auto *strToken = static_cast<StringToken *>(token);
 
-      str += "\"";
+      exprData.str += "\"";
 
       const auto &str1 = token->toString();
 
       if (strToken->isEmbedded()) {
         for (const auto &c : str1) {
           if (c == '\"')
-            str += "\\\"";
+            exprData.str += "\\\"";
           else
-            str += c;
+            exprData.str += c;
         }
 
         embedded = true;
       }
       else {
-        str += str1;
+        exprData.str += str1;
       }
 
-      str += "\"";
+      exprData.str += "\"";
     }
     else if (token->type() == TokenType::NUMBER)
-      str += token->toString();
-    else if (token->type() == TokenType::VARIABLE)
-      str += token->toString();
+      exprData.str += token->toString();
+    else if (token->type() == TokenType::VARIABLE) {
+      varName = token->toString();
+
+      exprData.str += varName;
+    }
     else if (token->type() == TokenType::KEYWORD) {
       if (isKeyword(token, KeywordType::FN)) {
         ++i;
@@ -4101,7 +5263,7 @@ evalExpr(const Tokens &tokens, CExprValuePtr &value) const
         if (argValues.size() != functionData.args.size())
           return errorMsg("FN arg mismatch");
 
-        str += "(";
+        exprData.str += "(";
 
         for (auto *ftoken :  functionData.tokens) {
           if (ftoken->type() == TokenType::VARIABLE) {
@@ -4111,33 +5273,64 @@ evalExpr(const Tokens &tokens, CExprValuePtr &value) const
 
             for (uint find = 0; find < functionData.args.size(); ++find) {
               if (functionData.args[find] == fVarName) {
-                str += argTokens[find]->exprString();
+                exprData.str += argTokens[find]->exprString();
                 found = true;
                 break;
               }
             }
 
             if (! found)
-              str += ftoken->exprString();
+              exprData.str += ftoken->exprString();
           }
           else
-            str += ftoken->exprString();
+            exprData.str += ftoken->exprString();
         }
 
-        str += ")";
+        exprData.str += ")";
       }
       else
-        str += token->exprString();
+        exprData.str += token->exprString();
+
+      simple = false;
     }
-    else
-      str += token->exprString();
+    else if (token->type() == TokenType::OPERATOR) {
+      exprData.str += token->exprString();
+      simple = false;
+    }
+    else if (token->type() == TokenType::SEPARATOR) {
+      exprData.str += token->exprString();
+      simple = false;
+    }
+    else {
+      std::cerr << "Invalid expr token '" << token->exprString() << "'\n";
+      exprData.str += token->exprString();
+      simple = false;
+    }
   }
 
   if (embedded && nt > 1)
-    warnMsg("Expression with embedded '" + str + "'");
+    warnMsg("Expression with embedded '" + exprData.str + "'");
 
-  if (! evalExpr(str, value))
-    return false;
+  if (simple) {
+    if (varName != "")
+      exprData.varName = varName;
+    else {
+      //std::cerr << "Simple: " << exprData.str << "\n";
+
+      if (! evalExpr(exprData.str, exprData.value))
+        return errorMsg("Invalid expression '" + exprData.str + "'");
+    }
+  }
+  else {
+    auto pstack = expr_->parseLine(exprData.str);
+    auto itoken = expr_->interpPTokenStack(pstack);
+
+    exprData.cstack = new CExprTokenStack;
+
+    *exprData.cstack = expr_->compileIToken(itoken);
+
+    //std::cerr << "Complex: " << exprData.str << "\n";
+  }
 
   return true;
 }
@@ -4157,6 +5350,41 @@ evalExpr(const std::string &str, CExprValuePtr &value) const
     value = expr_->createIntegerValue(0);
     return false;
   }
+
+  return true;
+}
+
+bool
+CPetBasic::
+evalExprData(const ExprData &exprData, CExprValuePtr &val) const
+{
+  if (exprData.value) {
+    val = exprData.value;
+  }
+  else if (exprData.varName != "") {
+    val = getVariableValue(exprData.varName);
+  }
+  else if (exprData.cstack) {
+    CExprValueArray values;
+
+    if (! expr_->executeCTokenStack(*exprData.cstack, values) || values.empty())
+      return false;
+
+    val = values.back();
+  }
+  else {
+    if (! evalExpr(exprData.str, val))
+      return false;
+  }
+
+#if 0
+  std::cerr << "eval: ";
+  print(std::cerr);
+  std::cerr << " = ";
+  std::string s;
+  if (! val->getStringValue(s)) s = "<null>";
+  std::cerr << s << "\n";
+#endif
 
   return true;
 }
@@ -4219,32 +5447,35 @@ setVariableValue(const std::string &name, const CExprValuePtr &value)
 
   auto valueType = expr_->nameType(uname);
 
-  auto val = value;
+  auto value1 = value;
 
   if      (valueType == CExprValueType::INTEGER) {
-    if (! val->isIntegerValue()) {
+    if (! value1->isIntegerValue()) {
       long i;
-      if (! val->getIntegerValue(i))
+      if (! value1->getIntegerValue(i))
         return errorMsg("Invalid value type");
-      val = expr_->createIntegerValue(i);
+      value1 = expr_->createIntegerValue(i);
     }
   }
   else if (valueType == CExprValueType::STRING) {
-    if (! val->isStringValue()) {
+    if (! value1->isStringValue()) {
       std::string s;
-      if (! val->getStringValue(s))
+      if (! value1->getStringValue(s))
         return errorMsg("Invalid value type");
-      val = expr_->createStringValue(s);
+      value1 = expr_->createStringValue(s);
     }
+  }
+  else {
+    value1 = CExprValuePtr(value1->dup());
   }
 
   auto var = getVariable(uname);
 
   if (! var) {
-    var = addVariable(uname, val);
+    var = addVariable(uname, value1);
   }
   else {
-    var->setValue(val);
+    var->setValue(value1);
 
     notifyVariablesChanged();
   }
@@ -4333,7 +5564,8 @@ setVariableValue(const std::string &name, const Inds &inds, const CExprValuePtr 
 {
   auto uname = CPetBasicUtil::toUpper(name);
 
-  //std::cerr << "setVariableValue: " << uname << " "; printInds(inds); std::cerr << "\n";
+  //std::cerr << "setVariableValue: " << uname << " "; printInds(inds);
+  //std::cerr << " "; value->print(std::cerr); std::cerr << "\n";
 
   auto *th = const_cast<CPetBasic *>(this);
 
@@ -4343,7 +5575,9 @@ setVariableValue(const std::string &name, const Inds &inds, const CExprValuePtr 
   auto pv = th->arrayVariables_.find(uname);
   assert(pv != th->arrayVariables_.end());
 
-  bool rc = (*pv).second.setValue(inds, value);
+  auto value1 = CExprValuePtr(value->dup());
+
+  bool rc = (*pv).second.setValue(inds, value1);
 
   notifyVariablesChanged();
 
@@ -4729,4 +5963,50 @@ CPetBasicToken(const CPetBasic *basic, const TokenType &type, const std::string 
  basic_(basic), type_(type)
 {
   str_ = str;
+
+//++s_num_basic_tokens_created;
+}
+
+CPetBasicToken::
+~CPetBasicToken()
+{
+//++s_num_basic_tokens_deleted;
+}
+
+//---
+
+CPetBasic::ExprToken::
+ExprToken(const CPetBasic *b, const ExprData &exprData) :
+ CPetBasicToken(b, TokenType::EXPR, exprData.str), exprData_(exprData)
+{
+  if (exprData_.value) {
+    assert(! exprData_.value->isConstant());
+
+    exprData_.value->setConstant(true);
+  }
+}
+
+void
+CPetBasic::ExprToken::
+print(std::ostream &os) const
+{
+  if (exprData_.value) {
+    std::string s;
+
+    if (! exprData_.value->getStringValue(s))
+      s = "<null>";
+
+    os << s;
+  }
+  else if (exprData_.varName != "")
+    os << "Var: " << exprData_.varName;
+  else
+    os << exprData_.str;
+}
+
+bool
+CPetBasic::ExprToken::
+eval(CExprValuePtr &val) const
+{
+  return basic_->evalExprData(exprData_, val);
 }

@@ -47,8 +47,12 @@ execBinaryOp(CExpr *expr, CExprValuePtr rhs, CExprOpType op) const
       else
         return expr->createIntegerValue(integer);
     }
-    case CExprOpType::TIMES:
-      return expr->createIntegerValue(integer_ * irhs);
+    case CExprOpType::TIMES: {
+      long res = integer_*irhs;
+      //assert(irhs == 0 || res/irhs == integer_);
+
+      return expr->createIntegerValue(res);
+    }
     case CExprOpType::DIVIDE: {
       // divide by zero
       if (irhs == 0) return CExprValuePtr();
@@ -61,10 +65,18 @@ execBinaryOp(CExpr *expr, CExprValuePtr rhs, CExprOpType op) const
 
       return expr->createIntegerValue(integer_ % irhs);
     }
-    case CExprOpType::PLUS:
-      return expr->createIntegerValue(integer_ + irhs);
-    case CExprOpType::MINUS:
-      return expr->createIntegerValue(integer_ - irhs);
+    case CExprOpType::PLUS: {
+      long res = integer_ + irhs;
+      //assert(res - irhs == integer_);
+
+      return expr->createIntegerValue(res);
+    }
+    case CExprOpType::MINUS: {
+      long res = integer_ - irhs;
+      //assert(res + irhs == integer_);
+
+      return expr->createIntegerValue(res);
+    }
     case CExprOpType::BIT_LSHIFT:
       return expr->createIntegerValue(integer_ << irhs);
     case CExprOpType::BIT_RSHIFT:

@@ -1,0 +1,2 @@
+100 P$="@#*%+-:."
+200 FOR I=1 TO LEN(P$):PRINT I:NEXT

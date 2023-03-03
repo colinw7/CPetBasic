@@ -23,7 +23,21 @@ void
 CQPetBasicVariables::
 reload()
 {
-  view_->updateModel();
+  if (! isVisible())
+    needsReload_ = true;
+  else
+    view_->updateModel();
+}
+
+void
+CQPetBasicVariables::
+showEvent(QShowEvent *)
+{
+  if (needsReload_) {
+    needsReload_ = false;
+
+    view_->updateModel();
+  }
 }
 
 QSize

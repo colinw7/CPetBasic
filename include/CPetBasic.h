@@ -14,6 +14,8 @@
 class CPetBasicExpr;
 class CPetBasicTerm;
 
+class CExprTokenStack;
+
 using uchar = unsigned char;
 
 //---
@@ -27,7 +29,9 @@ enum class CPetBasicTokenType {
   OPERATOR,
   SEPARATOR,
   STRING,
-  NUMBER
+  NUMBER,
+  EXPR,
+  TOKEN_LIST
 };
 
 class CPetBasicToken {
@@ -38,7 +42,9 @@ class CPetBasicToken {
   CPetBasicToken(const CPetBasic *b, const TokenType &type=TokenType::NONE,
                  const std::string &str="");
 
-  virtual ~CPetBasicToken() { }
+  virtual ~CPetBasicToken();
+
+  const CPetBasic *basic() const { return basic_; }
 
   const TokenType &type() const { return type_; }
 
@@ -151,6 +157,9 @@ class CPetBasic {
   enum class KeywordType {
     NONE,
     APPEND,
+#ifdef PET_EXTRA_KEYWORDS
+    ASSERT,
+#endif
     BACKUP,
     CLOSE,
     CLR,
@@ -162,12 +171,17 @@ class CPetBasic {
     DATA,
     DCLOSE,
     DEF,
-    DELAY, // custom command
+#ifdef PET_EXTRA_KEYWORDS
+    DELAY,
+#endif
     DIM,
     DIRECTORY,
     DLOAD,
     DOPEN,
     DSAVE,
+#ifdef PET_EXTRA_KEYWORDS
+    ELAPSED,
+#endif
     END,
     FN,
     FOR,
@@ -186,6 +200,9 @@ class CPetBasic {
     OPEN,
     PEEK,
     POKE,
+#ifdef PET_EXTRA_KEYWORDS
+    PLOT,
+#endif
     PRINT,
     READ,
     RECORD,
@@ -242,6 +259,9 @@ class CPetBasic {
 
   struct Statement {
     Tokens tokens;
+    Tokens compiledTokens;
+    bool   compiled    { false };
+    bool   hasCompiled { false };
   };
 
   using Statements = std::vector<Statement>;
@@ -296,6 +316,7 @@ class CPetBasic {
   bool loadFile(const std::string &fileName);
 
   void list();
+  void list(long startNum, long endNum);
 
   bool run();
 
@@ -407,7 +428,7 @@ class CPetBasic {
   static std::string decodeEmbeddedStr(const std::string &s);
   static std::string decodeEmbeddedChar(uchar c);
 
- private:
+ protected:
   bool replaceEmbedded(const std::string &str1, std::string &str2) const;
 
   std::string encodeEmbedded(const std::string &name) const;
@@ -416,11 +437,17 @@ class CPetBasic {
 
   void initKeywords() const;
 
- private:
+ protected:
   class KeywordToken : public CPetBasicToken {
    public:
     KeywordToken(const CPetBasic *b, const KeywordType &keywordType, const std::string &str) :
      CPetBasicToken(b, TokenType::KEYWORD, str), keywordType_(keywordType) {
+    }
+
+   ~KeywordToken() { }
+
+    KeywordToken *dup() const {
+      return new KeywordToken(basic(), keywordType(), str());
     }
 
     const KeywordType &keywordType() const { return keywordType_; }
@@ -587,6 +614,10 @@ class CPetBasic {
       }
     }
 
+    NumberToken *dup() const {
+      return new NumberToken(basic(), str());
+    }
+
     long   toInteger() const override { return ivalue(); }
     double toReal   () const override { return rvalue(); }
     bool   isReal   () const override { return isReal_; }
@@ -606,6 +637,41 @@ class CPetBasic {
     long   ivalue_ { 0 };
     double rvalue_ { 0.0 };
     bool   isReal_ { false };
+  };
+
+  struct ExprData {
+    std::string      str;
+    CExprValuePtr    value;
+    std::string      varName;
+    CExprTokenStack *cstack { nullptr };
+  };
+
+  class ExprToken : public CPetBasicToken {
+   public:
+    ExprToken(const CPetBasic *b, const ExprData &exprData);
+
+    bool eval(CExprValuePtr &val) const;
+
+    void print(std::ostream &os) const override;
+
+   private:
+    ExprData exprData_;
+  };
+
+  class TokenListToken : public CPetBasicToken {
+   public:
+    TokenListToken(const CPetBasic *b, const Tokens &tokens) :
+     CPetBasicToken(b, TokenType::TOKEN_LIST, ""), tokens_(tokens) {
+    }
+
+    const Tokens &tokens() const { return tokens_; }
+
+    void print(std::ostream &os) const override {
+      os << "tokens";
+    }
+
+   private:
+    Tokens tokens_;
   };
 
   class TokenList {
@@ -630,6 +696,13 @@ class CPetBasic {
     Token *currentToken() {
       if (atEnd()) return nullptr;
       return tokens_[it_];
+    }
+
+    Token *lastToken() {
+      if (nt_ > 0)
+        return tokens_[nt_ - 1];
+      else
+        return nullptr;
     }
 
     bool atStart() const { return (it_ == 0); }
@@ -676,7 +749,7 @@ class CPetBasic {
     }
   };
 
- private:
+ protected:
   void processLineData(LineData &lineData) const;
 
   bool parseLineTokens(const std::string &line, LineData &lineData) const;
@@ -712,15 +785,27 @@ class CPetBasic {
   }
 
   StringToken *createString(const std::string &str, bool embedded) const {
-    auto *op = new StringToken(this, str, embedded);
+    auto *token = new StringToken(this, str, embedded);
 
-    return op;
+    return token;
   }
 
   NumberToken *createNumber(const std::string &str) const {
-    auto *op = new NumberToken(this, str);
+    auto *num = new NumberToken(this, str);
 
-    return op;
+    return num;
+  }
+
+  ExprToken *createExpr(const ExprData &exprData) const {
+    auto *expr = new ExprToken(this, exprData);
+
+    return expr;
+  }
+
+  TokenListToken *createTokenList(const Tokens &tokens) const {
+    auto *list = new TokenListToken(this, tokens);
+
+    return list;
   }
 
   Token *createToken(const std::string &str) const {
@@ -731,26 +816,26 @@ class CPetBasic {
 
   //---
 
-  bool isKeyword(Token *token, const KeywordType &keywordType) const {
+  bool isKeyword(const Token *token, const KeywordType &keywordType) const {
     if (token->type() != TokenType::KEYWORD) return false;
 
-    auto *keyword = static_cast<KeywordToken *>(token);
+    const auto *keyword = static_cast<const KeywordToken *>(token);
 
     return (keyword->keywordType() == keywordType);
   }
 
-  bool isSeparator(Token *token, const SeparatorType &separatorType) const {
+  bool isSeparator(const Token *token, const SeparatorType &separatorType) const {
     if (token->type() != TokenType::SEPARATOR) return false;
 
-    auto *separator = static_cast<SeparatorToken *>(token);
+    const auto *separator = static_cast<const SeparatorToken *>(token);
 
     return (separator->separatorType() == separatorType);
   }
 
-  bool isOperator(Token *token, const OperatorType &operatorType) const {
+  bool isOperator(const Token *token, const OperatorType &operatorType) const {
     if (token->type() != TokenType::OPERATOR) return false;
 
-    auto *op = static_cast<OperatorToken *>(token);
+    const auto *op = static_cast<const OperatorToken *>(token);
 
     return (op->operatorType() == operatorType);
   }
@@ -759,73 +844,108 @@ class CPetBasic {
 
   bool parseLine(uint lineNum, const std::string &line, LineData &lineData) const;
 
-  bool runLine(const LineData &lineData);
-  bool runTokens(int lineN, const Tokens &tokens, bool &nextLine);
+  bool runLine(LineData &lineData);
+
+  bool compileTokens(const Tokens &tokens, bool &compiled, Tokens &compiledTokens);
+
+  bool runTokens(const LineRef &lineRef, const Tokens &tokens, bool &nextLine);
 
   void addData(const std::string &dataStr) const;
 
   //---
 
-  bool appendStatement   (TokenList &tokenList);
-  bool backupStatement   (TokenList &tokenList);
-  bool closeStatement    (TokenList &tokenList);
-  bool clrStatement      (TokenList &tokenList);
-  bool cmdStatement      (TokenList &tokenList);
-  bool collectStatement  (TokenList &tokenList);
-  bool concatStatement   (TokenList &tokenList);
-  bool contStatement     (TokenList &tokenList);
-  bool copyStatement     (TokenList &tokenList);
-  bool dataStatement     (const std::string &str);
-  bool dcloseStatement   (TokenList &tokenList);
-  bool defStatement      (TokenList &tokenList);
-  bool delayStatement    (TokenList &tokenList);
-  bool dimStatement      (TokenList &tokenList);
-  bool directoryStatement(TokenList &tokenList);
-  bool dloadStatement    (TokenList &tokenList);
-  bool dopenStatement    (TokenList &tokenList);
-  bool dsaveStatement    (TokenList &tokenList);
-  bool endStatement      (TokenList &tokenList);
-  bool forStatement      (const LineRef &lineRef, TokenList &tokenList);
-  bool getStatement      (TokenList &tokenList);
-  bool gosubStatement    (TokenList &tokenList);
-  bool gotoStatement     (TokenList &tokenList);
-  bool headerStatement   (TokenList &tokenList);
-  bool ifStatement       (const LineRef &lineRef, TokenList &tokenList, bool &nextLine);
-  bool inputStatement    (TokenList &tokenList);
-  bool letStatement      (TokenList &tokenList);
-  bool listStatement     (TokenList &tokenList);
-  bool loadStatement     (TokenList &tokenList);
-  bool newStatement      (TokenList &tokenList);
-  bool nextStatement     (const LineRef &lineRef, TokenList &tokenList);
-  bool onStatement       (TokenList &tokenList);
-  bool openStatement     (TokenList &tokenList);
-  bool pokeStatement     (TokenList &tokenList);
-  bool printStatement    (TokenList &tokenList);
-  bool readStatement     (TokenList &tokenList);
-  bool recordStatement   (TokenList &tokenList);
-  bool renameStatement   (TokenList &tokenList);
-  bool restoreStatement  (TokenList &tokenList);
-  bool returnStatement   (TokenList &tokenList);
-  bool runStatement      (TokenList &tokenList);
-  bool saveStatement     (TokenList &tokenList);
-  bool scratchStatement  (TokenList &tokenList);
-  bool stopStatement     (TokenList &tokenList);
-  bool sysStatement      (TokenList &tokenList);
-  bool verifyStatement   (TokenList &tokenList);
-  bool waitStatement     (TokenList &tokenList);
+  bool compileAssertStatement(TokenList &tokenList, Tokens &compiledTokens);
+  bool compileDefStatement   (TokenList &tokenList, Tokens &compiledTokens);
+  bool compileDelayStatement (TokenList &tokenList, Tokens &compiledTokens);
+  bool compileDimStatement   (TokenList &tokenList, Tokens &compiledTokens);
+  bool compileForStatement   (TokenList &tokenList, Tokens &compiledTokens);
+  bool compileGosubStatement (TokenList &tokenList, Tokens &compiledTokens);
+  bool compileGotoStatement  (TokenList &tokenList, Tokens &compiledTokens);
+  bool compileIfStatement    (TokenList &tokenList, Tokens &compiledTokens);
+  bool compileLetStatement   (TokenList &tokenList, Tokens &compiledTokens);
+  bool compileNextStatement  (TokenList &tokenList, Tokens &compiledTokens);
+#ifdef PET_EXTRA_KEYWORDS
+  bool compilePlotStatement  (TokenList &tokenList, Tokens &compiledTokens);
+#endif
+  bool compilePokeStatement  (TokenList &tokenList, Tokens &compiledTokens);
+  bool compilePrintStatement (TokenList &tokenList, Tokens &compiledTokens);
+  bool compileReadStatement  (TokenList &tokenList, Tokens &compiledTokens);
 
   //---
 
+  bool appendStatement   (const Tokens &tokens);
+#ifdef PET_EXTRA_KEYWORDS
+  bool assertStatement   (const Tokens &tokens);
+#endif
+  bool backupStatement   (const Tokens &tokens);
+  bool closeStatement    (const Tokens &tokens);
+  bool clrStatement      (const Tokens &tokens);
+  bool cmdStatement      (const Tokens &tokens);
+  bool collectStatement  (const Tokens &tokens);
+  bool concatStatement   (const Tokens &tokens);
+  bool contStatement     (const Tokens &tokens);
+  bool copyStatement     (const Tokens &tokens);
+  bool dataStatement     (const std::string &str);
+  bool dcloseStatement   (const Tokens &tokens);
+  bool defStatement      (const Tokens &tokens);
+#ifdef PET_EXTRA_KEYWORDS
+  bool delayStatement    (const Tokens &tokens);
+#endif
+  bool dimStatement      (const Tokens &tokens);
+  bool directoryStatement(const Tokens &tokens);
+  bool dloadStatement    (const Tokens &tokens);
+  bool dopenStatement    (const Tokens &tokens);
+  bool dsaveStatement    (const Tokens &tokens);
+#ifdef PET_EXTRA_KEYWORDS
+  bool elapsedStatement  (const Tokens &tokens);
+#endif
+  bool endStatement      (const Tokens &tokens);
+  bool forStatement      (const LineRef &lineRef, const Tokens &tokens);
+  bool getStatement      (TokenList &tokenList);
+  bool gosubStatement    (const Tokens &tokens);
+  bool gotoStatement     (const Tokens &tokens);
+  bool headerStatement   (const Tokens &tokens);
+  bool ifStatement       (const LineRef &lineRef, const Tokens &tokens, bool &nextLine);
+  bool inputStatement    (TokenList &tokenList);
+  bool letStatement      (const Tokens &tokens);
+  bool listStatement     (TokenList &tokenList);
+  bool loadStatement     (const Tokens &tokens);
+  bool newStatement      (const Tokens &tokens);
+  bool nextStatement     (const LineRef &lineRef, const Tokens &tokens);
+  bool onStatement       (TokenList &tokenList);
+  bool openStatement     (const Tokens &tokens);
+#ifdef PET_EXTRA_KEYWORDS
+  bool plotStatement     (const Tokens &tokens);
+#endif
+  bool pokeStatement     (const Tokens &tokens);
+  bool printStatement    (const Tokens &tokens);
+  bool readStatement     (const Tokens &tokens);
+  bool recordStatement   (const Tokens &tokens);
+  bool renameStatement   (const Tokens &tokens);
+  bool restoreStatement  (const Tokens &tokens);
+  bool returnStatement   (const Tokens &tokens);
+  bool runStatement      (const Tokens &tokens);
+  bool saveStatement     (const Tokens &tokens);
+  bool scratchStatement  (const Tokens &tokens);
+  bool stopStatement     (const Tokens &tokens);
+  bool sysStatement      (const Tokens &tokens);
+  bool verifyStatement   (const Tokens &tokens);
+  bool waitStatement     (const Tokens &tokens);
+
+  //---
+
+  bool compileVariable(TokenList &tokenList, const std::string &id, Tokens &tokens) const;
+
+#if 0
   bool readVariable(TokenList &tokenList, const std::string &id,
                     std::string &varName, Inds &inds) const;
-
-  void printInds(const Inds &inds) const;
+#endif
 
   //---
 
   void gotoLine(const LineRef &lineRef);
 
-  void pushLine(int lineNum);
+  void pushLine(const LineRef &lineRef);
   bool popLine();
 
   //---
@@ -841,13 +961,20 @@ class CPetBasic {
 
   //---
 
+  bool evalExprData(const ExprData &exprData, CExprValuePtr &val) const;
+
  public:
   virtual void printString(const std::string &s) const;
 
+  void printInds(const Inds &inds) const;
+
   //---
 
- private:
+ protected:
   bool evalExpr(const Tokens &tokens, CExprValuePtr &value) const;
+
+  bool tokensToExpr(const Tokens &tokens, ExprData &exprData) const;
+
   bool evalExpr(const std::string &str, CExprValuePtr &value) const;
 
   int getLineInd(uint lineNum) const;
@@ -857,6 +984,8 @@ class CPetBasic {
   void addDataValue(const CExprValuePtr &value);
 
   //---
+
+  void clearLines();
 
  public:
   void warnMsg(const std::string &msg) const;
@@ -873,9 +1002,8 @@ class CPetBasic {
    public:
     ForData() { }
 
-    ForData(const std::string &varName, const CExprValuePtr &toVal,
-            const CExprValuePtr &stepVal, const LineRef &lineRef,
-            const LineRef &nextLineRef) :
+    ForData(const std::string &varName, const CExprValuePtr &toVal, const CExprValuePtr &stepVal,
+            const LineRef &lineRef, const LineRef &nextLineRef) :
      varName_(varName), toVal_(toVal), stepVal_(stepVal), lineRef_(lineRef),
      nextLineRef_(nextLineRef) {
     }

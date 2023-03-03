@@ -137,9 +137,9 @@ setDebugVisible(bool b)
 
 void
 CQPetBasicApp::
-setStatusMsg(const QString &msg)
+setStatusMsg(const QString & /*msg*/)
 {
-  status_->setText(msg);
+  //status_->setText(msg);
 
   qApp->processEvents();
 }
@@ -156,7 +156,7 @@ void
 CQPetBasicApp::
 notifyLinesChanged()
 {
-  dbg_->file()->update();
+  dbg_->file()->requestUpdate();
 }
 
 void
@@ -165,7 +165,7 @@ notifyLineNumChanged()
 {
   dbg_->scrollVisible();
 
-  dbg_->file()->update();
+  dbg_->file()->requestUpdate();
 }
 
 void

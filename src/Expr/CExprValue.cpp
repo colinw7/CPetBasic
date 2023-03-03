@@ -110,6 +110,7 @@ CExprValue::
 setBooleanValue(bool b)
 {
   assert(isBooleanValue());
+  assert(! isConstant());
 
   base_->setBooleanValue(b);
 }
@@ -119,6 +120,7 @@ CExprValue::
 setIntegerValue(long l)
 {
   assert(isIntegerValue());
+  assert(! isConstant());
 
   base_->setIntegerValue(l);
 }
@@ -128,6 +130,7 @@ CExprValue::
 setRealValue(double r)
 {
   assert(isRealValue());
+  assert(! isConstant());
 
   base_->setRealValue(r);
 }
@@ -137,6 +140,7 @@ CExprValue::
 setStringValue(const std::string &s)
 {
   assert(isStringValue());
+  assert(! isConstant());
 
   base_->setStringValue(s);
 }
@@ -148,6 +152,8 @@ convToType(CExprValueType type)
   uint itype = uint(type);
 
   if (itype & uint(type_)) return true;
+
+  assert(! isConstant());
 
   // TODO: conversion order
   if      (hasType(itype, CExprValueType::BOOLEAN))
@@ -166,6 +172,8 @@ bool
 CExprValue::
 convToBoolean()
 {
+  assert(! isConstant());
+
   if (isBooleanValue()) return true;
 
   bool boolean;
@@ -183,6 +191,8 @@ bool
 CExprValue::
 convToInteger()
 {
+  assert(! isConstant());
+
   if (isIntegerValue()) return true;
 
   long integer;
@@ -200,6 +210,8 @@ bool
 CExprValue::
 convToReal()
 {
+  assert(! isConstant());
+
   if (isRealValue()) return true;
 
   double real;
@@ -217,6 +229,8 @@ bool
 CExprValue::
 convToString()
 {
+  assert(! isConstant());
+
   if (isStringValue()) return true;
 
   std::string str;

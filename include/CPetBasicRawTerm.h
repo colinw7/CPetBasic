@@ -42,9 +42,9 @@ class CPetBasicRawTerm : public CPetBasicTerm {
   void enter() override;
 
   void cursorUp() override;
-  void cursorDown(bool force=false) override;
+  void cursorDown(bool force=true) override;
   void cursorLeft() override;
-  void cursorRight(bool force=false) override;
+  void cursorRight(bool force=true) override;
 
   void cursorLeftFull() override;
 

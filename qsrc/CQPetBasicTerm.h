@@ -31,12 +31,6 @@ class CQPetBasicTerm : public QWidget, public CPetBasicTerm {
   bool isTty() const override { return false; }
   bool isRaw() const override { return true; }
 
-  uint row() const override { return r_; }
-  uint col() const override { return c_; }
-
-  uint numRows() const override { return nr_; }
-  uint numCols() const override { return nc_; }
-
   //---
 
   void resize(uint nr, uint nc) override;
@@ -61,10 +55,14 @@ class CQPetBasicTerm : public QWidget, public CPetBasicTerm {
 
   void delay(long t) override;
 
+  bool drawPoint(long, long, long) override;
+
   //---
 
   void keyPressEvent(QKeyEvent *e) override;
   void keyReleaseEvent(QKeyEvent *e) override;
+
+  void resizeEvent(QResizeEvent *e) override;
 
   void paintEvent(QPaintEvent *e) override;
 
@@ -77,6 +75,7 @@ class CQPetBasicTerm : public QWidget, public CPetBasicTerm {
 
  private Q_SLOTS:
   void cursorTimeout();
+  void updateTimeout();
 
   void loopTimeout();
 
@@ -85,6 +84,8 @@ class CQPetBasicTerm : public QWidget, public CPetBasicTerm {
 
   QTimer *cursorTimer_ { nullptr };
   bool    cursorBlink_ { false };
+
+  QTimer *updateTimer_ { nullptr };
 
   struct LoopData {
     QTimer*     loopTimer { nullptr };
@@ -100,6 +101,10 @@ class CQPetBasicTerm : public QWidget, public CPetBasicTerm {
   mutable double cw_ { 8.0 };
   mutable double ch_ { 8.0 };
   mutable double ca_ { 8.0 };
+
+  QImage *image_ { nullptr };
+
+  bool needsUpdate_ { false };
 };
 
 #endif

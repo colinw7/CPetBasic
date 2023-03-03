@@ -84,6 +84,7 @@ CExprVariable(const std::string &name, const CExprValuePtr &value) :
 CExprVariable::
 ~CExprVariable()
 {
+  delete obj_;
 }
 
 CExprValuePtr

@@ -21,6 +21,9 @@ class CExprValue {
     return (type & uint(subType));
   }
 
+  bool isConstant() const { return constant_; }
+  void setConstant(bool b) { constant_ = b; }
+
   CExprValue *dup() const;
 
   bool isBooleanValue() const;
@@ -59,8 +62,9 @@ class CExprValue {
  private:
   using CExprValueBaseP = std::unique_ptr<CExprValueBase>;
 
-  CExprValueType  type_ { CExprValueType::NONE };
+  CExprValueType  type_     { CExprValueType::NONE };
   CExprValueBaseP base_;
+  bool            constant_ { false };
 };
 
 #endif
